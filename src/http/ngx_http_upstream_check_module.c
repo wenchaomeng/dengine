@@ -7,6 +7,7 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 #include <ngx_config.h>
+#include <ngx_regex.h>
 
 
 typedef struct ngx_http_upstream_check_peer_s ngx_http_upstream_check_peer_t;
@@ -150,6 +151,8 @@ struct ngx_http_upstream_check_peer_s {
     ngx_http_upstream_check_peer_shm_t      *shm;
     ngx_http_upstream_check_srv_conf_t      *conf;
 
+		ngx_regex_compile_t                     *html_pattern_ngx_regex;
+
     unsigned                                 delete;
 };
 
@@ -248,6 +251,7 @@ struct ngx_http_upstream_check_srv_conf_s {
     } code;
 
     ngx_uint_t                               default_down;
+		ngx_str_t								                 html_pattern;
     ngx_uint_t                               unique;
 };
 
@@ -362,6 +366,8 @@ static char *ngx_http_upstream_check_http_send(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
 static char *ngx_http_upstream_check_http_expect_alive(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
+static char *ngx_http_upstream_check_http_expect_pattern(ngx_conf_t *cf,
+    ngx_command_t *cmd, void *conf);
 
 static char *ngx_http_upstream_check_shm_size(ngx_conf_t *cf,
     ngx_command_t *cmd, void *conf);
@@ -453,6 +459,13 @@ static ngx_command_t  ngx_http_upstream_check_commands[] = {
     { ngx_string("check_status"),
       NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1|NGX_CONF_NOARGS,
       ngx_http_upstream_check_status,
+      0,
+      0,
+      NULL },
+
+    { ngx_string("check_http_expect_pattern"),
+      NGX_HTTP_UPS_CONF|NGX_CONF_TAKE1,
+      ngx_http_upstream_check_http_expect_pattern,
       0,
       0,
       NULL },
@@ -1226,12 +1239,25 @@ ngx_http_upstream_check_add_timers(ngx_cycle_t *cycle)
 
         ucscf = peer[i].conf;
 
+				peer[i].pool = ngx_create_pool(ngx_pagesize, cycle->log);
+				if (peer[i].pool == NULL) {
+						return NGX_ERROR;
+				}
+
         /*
          * We add a random start time here, since we don't want to trigger
          * the check events too close to each other at the beginning.
          */
         delay = ucscf->check_interval > 1000 ? ucscf->check_interval : 1000;
         t = ngx_random() % delay;
+
+				if(ucscf->html_pattern.len > 0) {
+					ngx_regex_compile_t *ngx_regex = ngx_pcalloc(peer[i].pool, sizeof(ngx_regex_compile_t));
+					ngx_regex->pattern = ucscf->html_pattern;
+					ngx_regex->pool = peer[i].pool;
+					ngx_regex_compile(ngx_regex);
+					peer[i].html_pattern_ngx_regex = ngx_regex;
+				}
 
         peer[i].shm = &peer_shm[i];
 
@@ -1739,7 +1765,41 @@ ngx_http_upstream_check_http_parse(ngx_http_upstream_check_peer_t *peer)
                        "http_parse: code_n: %ui, conf: %ui",
                        code_n, ucscf->code.status_alive);
 
-        if (code_n & ucscf->code.status_alive) {
+				// marsqing start	
+				int html_pattern_matched = 1;
+				if(peer->html_pattern_ngx_regex != NULL && peer->html_pattern_ngx_regex->regex != NULL) {
+					u_char* html_start_pos = ctx->recv.pos;
+					u_char* idx;
+					for(idx = ctx->recv.pos; idx < ctx->recv.last - 3; idx++) {
+						if(*idx == '\r') {
+							if(*(idx + 1) == '\n' && *(idx + 2) == '\r' && *(idx + 3) == '\n') {
+								html_start_pos = idx + 4;
+							}
+						}
+					}
+					int html_size = ctx->recv.last - html_start_pos;
+					if(html_size > 0) {
+						ngx_str_t ngx_html;
+						ngx_html.data = html_start_pos;
+						ngx_html.len = html_size;
+						int OVECCOUNT = 30; // can hold OVECCOUNT/3 captured substring
+						int ovector[OVECCOUNT];
+						int pcre_substring_captured_count = ngx_regex_exec(peer->html_pattern_ngx_regex->regex, &ngx_html, ovector, OVECCOUNT);
+						if(pcre_substring_captured_count >= 0) {
+							html_pattern_matched = 1;
+						} else {
+							html_pattern_matched = 0;
+						}
+						ngx_log_debug3(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+									"http check pattern %V against html %V result %d",
+									&(ucscf->html_pattern), &ngx_html, html_pattern_matched);
+					} else {
+						html_pattern_matched = 0;
+					}
+				}
+				//marsqing end
+
+				if (code_n & ucscf->code.status_alive && html_pattern_matched) {
             return NGX_OK;
         } else {
             return NGX_ERROR;
@@ -2345,6 +2405,8 @@ ngx_http_upstream_check_status_handler(ngx_http_request_t *r)
     ngx_http_upstream_check_peers_t       *peers;
     ngx_http_upstream_check_loc_conf_t    *uclcf;
     ngx_http_upstream_check_status_ctx_t  *ctx;
+
+		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "HEALTH");
 
     if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD) {
         return NGX_HTTP_NOT_ALLOWED;
@@ -2958,6 +3020,24 @@ ngx_http_upstream_check_http_send(ngx_conf_t *cf, ngx_command_t *cmd,
                                               ngx_http_upstream_check_module);
 
     ucscf->send = value[1];
+
+    return NGX_CONF_OK;
+}
+
+
+static char *
+ngx_http_upstream_check_http_expect_pattern(ngx_conf_t *cf, ngx_command_t *cmd,
+    void *conf)
+{
+    ngx_str_t                           *value;
+    ngx_http_upstream_check_srv_conf_t  *ucscf;
+
+    value = cf->args->elts;
+
+    ucscf = ngx_http_conf_get_module_srv_conf(cf,
+                                              ngx_http_upstream_check_module);
+
+    ucscf->html_pattern = value[1];
 
     return NGX_CONF_OK;
 }
