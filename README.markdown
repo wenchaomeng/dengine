@@ -1,3 +1,11 @@
+Dynamic proxy_pass Support
+============
+* brew install luajig
+* git clone https://github.com/marsqing/ngx_http_dyups_module.git
+* git clone https://github.com/marsqing/ngx_dynamic_proxy_pass_module.git
+* ./remake
+
+
 
 Introduction
 ============
