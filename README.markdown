@@ -5,6 +5,7 @@ build tengine
     $ brew install luajit
     $ git clone https://github.com/marsqing/ngx_http_dyups_module.git
     $ git clone https://github.com/marsqing/ngx_dynamic_proxy_pass_module.git
+	$ vim ngx_dynamic_proxy_pass_module/ngx_dynamic_proxy_pass_module.c and modify rule.lua path at line 204
     $ ./remake
 
 config tengine
