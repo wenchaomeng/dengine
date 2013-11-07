@@ -1,9 +1,21 @@
 Dynamic proxy_pass Support
 ============
-* brew install luajig
-* git clone https://github.com/marsqing/ngx_http_dyups_module.git
-* git clone https://github.com/marsqing/ngx_dynamic_proxy_pass_module.git
-* ./remake
+build tengine
+	$ brew install luajig
+	$ git clone https://github.com/marsqing/ngx_http_dyups_module.git
+	$ git clone https://github.com/marsqing/ngx_dynamic_proxy_pass_module.git
+	$ ./remake
+
+config tengine
+* add "check_http_expect_pattern pattern;" to upstream
+* add "proxy_pass http://$dp_upstream;" to location
+* add the following 
+	server {
+		listen 8081;
+		location / {
+			dyups_interface;
+		}
+	}
 
 
 
