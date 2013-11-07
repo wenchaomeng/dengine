@@ -10,7 +10,7 @@ build tengine
 config tengine
 * add "check_http_expect_pattern pattern;" to upstream
 * add "proxy_pass http://$dp_upstream;" to location
-* add the following 
+add the following 
 
     server {
         listen 8081;
