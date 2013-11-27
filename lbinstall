@@ -1,0 +1,50 @@
+#!/bin/bash
+
+platform=`uname -o`
+
+if [ $platform == "GNU/Linux" ]; then
+	yum -y install pcre.x86_64 pcre-devel.x86_64
+fi
+
+git checkout dynamic_upstream_check
+
+if [ ! -x "ngx_http_dyups_module" ]; then
+	git clone https://github.com/marsqing/ngx_http_dyups_module.git
+fi
+
+if [ ! -x "ngx_dynamic_proxy_pass_module" ]; then
+	git clone https://github.com/marsqing/ngx_dynamic_proxy_pass_module.git
+fi
+
+if [ ! -x "luajit-2.0" ]; then
+	git clone http://luajit.org/git/luajit-2.0.git
+fi
+
+cd luajit-2.0
+
+make
+
+make install
+
+cd ..
+
+already=0
+while read line
+do
+	   if [ $line == "/usr/local/lib" ]; then
+		   already=1
+	   fi
+done < /etc/ld.so.conf
+if [ $already == 0 ]; then
+	echo "/usr/local/lib" >> /etc/ld.so.conf
+fi
+ldconfig
+
+./configure --with-http_upstream_check_module --add-module=ngx_dynamic_proxy_pass_module --with-luajit-inc=/usr/local/include/luajit-2.0 --with-luajit-lib=/usr/local/lib/ --with-http_lua_module --add-module=ngx_http_dyups_module
+
+make
+
+make install
+
+
+
