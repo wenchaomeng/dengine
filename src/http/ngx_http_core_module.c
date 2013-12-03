@@ -224,7 +224,7 @@ static ngx_command_t  ngx_http_core_commands[] = {
       NULL },
 
     { ngx_string("server"),
-      NGX_HTTP_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_MULTI|NGX_CONF_NOARGS,
+      NGX_HTTP_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
       ngx_http_core_server,
       0,
       0,
@@ -1023,6 +1023,7 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
                       "client intended to send too large body: %O bytes",
                       r->headers_in.content_length_n);
 
+        r->expect_tested = 1;
         (void) ngx_http_discard_request_body(r);
         ngx_http_finalize_request(r, NGX_HTTP_REQUEST_ENTITY_TOO_LARGE);
         return NGX_OK;
@@ -2621,6 +2622,7 @@ ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name)
 
             r->internal = 1;
             r->content_handler = NULL;
+            r->uri_changed = 0;
             r->loc_conf = (*clcfp)->loc_conf;
 
             /* clear the modules contexts */
@@ -2765,7 +2767,15 @@ ngx_http_get_forwarded_addr(ngx_http_request_t *r, ngx_addr_t *addr,
 
         if (IN6_IS_ADDR_V4MAPPED(inaddr6)) {
             family = AF_INET;
-            inaddr = *(in_addr_t *) &inaddr6->s6_addr[12];
+
+            p = inaddr6->s6_addr;
+
+            inaddr = p[12] << 24;
+            inaddr += p[13] << 16;
+            inaddr += p[14] << 8;
+            inaddr += p[15];
+
+            inaddr = htonl(inaddr);
         }
     }
 #endif
@@ -3225,7 +3235,7 @@ ngx_http_core_type(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
 {
     ngx_http_core_loc_conf_t *clcf = conf;
 
-    ngx_str_t       *value, *content_type, *old, file;
+    ngx_str_t       *value, *content_type, *old;
     ngx_uint_t       i, n, hash;
     ngx_hash_key_t  *type;
 
@@ -3238,15 +3248,8 @@ ngx_http_core_type(ngx_conf_t *cf, ngx_command_t *dummy, void *conf)
                                " in \"include\" directive");
             return NGX_CONF_ERROR;
         }
-        file = value[1];
 
-        if (ngx_conf_full_name(cf->cycle, &file, 1) != NGX_OK) {
-            return NGX_CONF_ERROR;
-        }
-
-        ngx_log_debug1(NGX_LOG_DEBUG_CORE, cf->log, 0, "include %s", file.data);
-
-        return ngx_conf_parse(cf, &file);
+        return ngx_conf_include(cf, dummy, conf);
     }
 
     content_type = ngx_palloc(cf->pool, sizeof(ngx_str_t));
@@ -4662,7 +4665,7 @@ ngx_http_core_error_page(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_str_null(&args);
 
-    if (cv.lengths == NULL && uri.data[0] == '/') {
+    if (cv.lengths == NULL && uri.len && uri.data[0] == '/') {
         p = (u_char *) ngx_strchr(uri.data, '?');
 
         if (p) {
@@ -4696,7 +4699,7 @@ ngx_http_core_error_page(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         for (j = 0; j < clcf->error_pages->nelts; j++) {
             if (err[j].status == status) {
                 ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
-                                   "error_page code \"%d\" duplicated",
+                                   "error_page code \"%i\" duplicated",
                                    status);
                 return NGX_CONF_ERROR;
             }

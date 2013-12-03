@@ -90,6 +90,7 @@ typedef struct {
     ngx_uint_t                       weight;
     ngx_uint_t                       max_fails;
     time_t                           fail_timeout;
+    ngx_str_t                        id;
 
     unsigned                         down:1;
     unsigned                         backup:1;
@@ -102,6 +103,7 @@ typedef struct {
 #define NGX_HTTP_UPSTREAM_FAIL_TIMEOUT  0x0008
 #define NGX_HTTP_UPSTREAM_DOWN          0x0010
 #define NGX_HTTP_UPSTREAM_BACKUP        0x0020
+#define NGX_HTTP_UPSTREAM_ID            0x0040
 
 
 struct ngx_http_upstream_srv_conf_s {
@@ -376,6 +378,11 @@ ngx_uint_t ngx_http_upstream_check_peer_down(ngx_uint_t index);
 
 void ngx_http_upstream_check_get_peer(ngx_uint_t index);
 void ngx_http_upstream_check_free_peer(ngx_uint_t index);
+
+ngx_uint_t ngx_http_upstream_check_add_dynamic_peer(ngx_pool_t *pool,
+    ngx_http_upstream_srv_conf_t *us, ngx_addr_t *peer);
+void ngx_http_upstream_check_delete_dynamic_peer(ngx_str_t *name,
+    ngx_addr_t *peer_addr);
 
 #endif
 
