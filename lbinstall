@@ -6,8 +6,6 @@ if [ $platform == "GNU/Linux" ]; then
 	yum -y install pcre.x86_64 pcre-devel.x86_64
 fi
 
-git checkout dynamic_upstream_check
-
 if [ ! -x "ngx_http_dyups_module" ]; then
 	git clone https://github.com/marsqing/ngx_http_dyups_module.git
 fi
