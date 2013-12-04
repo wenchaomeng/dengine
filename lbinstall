@@ -6,14 +6,6 @@ if [ $platform == "GNU/Linux" ]; then
 	yum -y install pcre.x86_64 pcre-devel.x86_64
 fi
 
-if [ ! -x "ngx_http_dyups_module" ]; then
-	git clone https://github.com/marsqing/ngx_http_dyups_module.git
-fi
-
-if [ ! -x "ngx_dynamic_proxy_pass_module" ]; then
-	git clone https://github.com/marsqing/ngx_dynamic_proxy_pass_module.git
-fi
-
 if [ ! -x "luajit-2.0" ]; then
 	git clone http://luajit.org/git/luajit-2.0.git
 fi
@@ -43,6 +35,3 @@ ldconfig
 make
 
 make install
-
-
-
