@@ -6,10 +6,6 @@ if [ $platform == "GNU/Linux" ]; then
 	yum -y install pcre.x86_64 pcre-devel.x86_64
 fi
 
-if [ ! -x "luajit-2.0" ]; then
-	git clone http://luajit.org/git/luajit-2.0.git
-fi
-
 cd luajit-2.0
 
 make
