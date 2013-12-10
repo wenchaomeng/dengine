@@ -6,8 +6,11 @@
 #include "lualib.h"
 #include "ngx_http_dyups_module.h"
 
+#define DEFAULT_LB_LUA_FILE "/usr/local/nginx/conf/phoenix-slb/rule.lua"
+
 typedef struct {
 	ngx_str_t dp_domain;
+	ngx_str_t dp_domain_weight;
 	ngx_str_t lb_lua_file;
 	lua_State *L;
 } ngx_http_dypp_loc_conf_t;
@@ -31,6 +34,16 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_dypp_loc_conf_t, lb_lua_file),
 		NULL },
+
+	{
+		ngx_string("dp_domain_weight"), // The command name
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_str_slot, // The command handler
+		NGX_HTTP_LOC_CONF_OFFSET,
+		offsetof(ngx_http_dypp_loc_conf_t, dp_domain_weight),
+		NULL
+	},
+
 
 
 	ngx_null_command
@@ -87,6 +100,8 @@ static void* ngx_http_dypp_create_loc_conf(ngx_conf_t* cf) {
 	}
 	conf->dp_domain.len = 0;
 	conf->dp_domain.data = NULL;
+	conf->dp_domain_weight.len = 0;
+	conf->dp_domain_weight.data = NULL;
 	conf->lb_lua_file.data = NULL;
 	conf->lb_lua_file.len = 0;
 
@@ -96,10 +111,11 @@ static void* ngx_http_dypp_create_loc_conf(ngx_conf_t* cf) {
 static char* ngx_http_dypp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child){
 	ngx_http_dypp_loc_conf_t *prev = parent;
 	ngx_http_dypp_loc_conf_t *conf = child;
-	
+
 	ngx_conf_merge_str_value(conf->dp_domain, prev->dp_domain, "");
+	ngx_conf_merge_str_value(conf->dp_domain_weight, prev->dp_domain_weight, "");
 	ngx_conf_merge_str_value(conf->lb_lua_file, prev->lb_lua_file, "");
-	
+
 	return NGX_CONF_OK;
 }
 
@@ -166,7 +182,7 @@ static int get_upstream_list(lua_State *L) {
 	dumcf = ngx_http_get_module_main_conf(cur_r, ngx_http_dyups_module);
 
 	ngx_uint_t len, i, chosen_upstream_cnt;
-        len = 0;
+	len = 0;
 	chosen_upstream_cnt = 0;
 	ngx_http_dyups_srv_conf_t *duscfs, *duscf;
 	duscfs = dumcf->dy_upstreams.elts;
@@ -175,10 +191,17 @@ static int get_upstream_list(lua_State *L) {
 
 		ngx_str_t *upstream_name = &duscf->upstream->host;
 		if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, cur_dp_domain->len) == 0) {
-			if(upstream_name->data[cur_dp_domain->len] == '@') {
+			if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, upstream_name->len) == 0) {
 				chosen_upstream_cnt++;
 				lua_pushlstring(L, (char*)duscf->upstream->host.data, duscf->upstream->host.len);
 				lua_pushinteger(L, duscf->upstream->servers->nelts);
+			}
+			else{
+				if(upstream_name->data[cur_dp_domain->len] == '@') {
+					chosen_upstream_cnt++;
+					lua_pushlstring(L, (char*)duscf->upstream->host.data, duscf->upstream->host.len);
+					lua_pushinteger(L, duscf->upstream->servers->nelts);
+				}
 			}
 		}
 
@@ -215,11 +238,34 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 		lua_register(hdlc->L, "get_cookie", get_cookie);
 		lua_register(hdlc->L, "get_upstream_list", get_upstream_list);
 		lua_register(hdlc->L, "get_ngx_http_variable", get_ngx_http_variable);
-		
-		if (luaL_loadfile(hdlc->L, (char*)hdlc->lb_lua_file.data) || lua_pcall(hdlc->L,0,0,0)) {
-			return NGX_ERROR;
+
+		if ((char*)hdlc->lb_lua_file.data == NULL || hdlc->lb_lua_file.len == 0){
+			if (luaL_loadfile(hdlc->L, DEFAULT_LB_LUA_FILE) || lua_pcall(hdlc->L,0,0,0)) {
+				return NGX_ERROR;
+			}
+			else{
+				if(hdlc->dp_domain_weight.data != NULL && hdlc->dp_domain_weight.len != 0){
+	                         	lua_getglobal(hdlc->L, "set_dp_domain_weight");
+	                         	lua_pushlstring(hdlc->L, (char*)hdlc->dp_domain_weight.data, strlen((char*)hdlc->dp_domain_weight.data));
+					int ret = lua_pcall(hdlc->L, 1, 0, 0);
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "set_dp_domain_weight fail!! %d", ret);
+				}
+			}
 		}
-	
+		else{
+			if (luaL_loadfile(hdlc->L, (char*)hdlc->lb_lua_file.data) || lua_pcall(hdlc->L,0,0,0)) {
+				return NGX_ERROR;
+			}
+			else{
+				if(hdlc->dp_domain_weight.data != NULL && hdlc->dp_domain_weight.len != 0){
+	                         	lua_getglobal(hdlc->L, "set_dp_domain_weight");
+	                         	lua_pushlstring(hdlc->L, (char*)hdlc->dp_domain_weight.data, strlen((char*)hdlc->dp_domain_weight.data));
+					int ret = lua_pcall(hdlc->L, 1, 0, 0);
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "set_dp_domain_weight fail!! %d %s %d", ret, (char*)hdlc->dp_domain_weight.data, hdlc->dp_domain_weight.len);
+				}
+			}
+		}
+
 	}
 	cur_dp_domain = &hdlc->dp_domain;
 
@@ -227,50 +273,50 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 	//ngx_str_t dianping = ngx_string("dianping");
 
 	u_char *chosen_upstream = call_lua(r, hdlc->L);
-	
+
 	/*
-	if(ahlf == NULL) {
-		call_lua(r);
-	}
-	char* chosen_upstream = ngx_pcalloc(r->pool, 6);
-	strcpy(chosen_upstream, "six@0");
-	*/
+	   if(ahlf == NULL) {
+	   call_lua(r);
+	   }
+	   char* chosen_upstream = ngx_pcalloc(r->pool, 6);
+	   strcpy(chosen_upstream, "six@0");
+	   */
 
 	if(r->headers_in.cookies.nelts > 0){
 
 		/*
-		ngx_str_t *value = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
-		ngx_str_t cookie_name = ngx_string("UID");
-		ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, value);
-		ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "UID %V", value);
-		*/
-	
+		   ngx_str_t *value = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
+		   ngx_str_t cookie_name = ngx_string("UID");
+		   ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, value);
+		   ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "UID %V", value);
+		   */
+
 		/*	
-		if (ngx_strncasecmp(value->data, baidu.data, baidu.len) == 0) {
+			if (ngx_strncasecmp(value->data, baidu.data, baidu.len) == 0) {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "GOTO BIDU");
 			chosen_pool = &baidu;
-		} else {
+			} else {
 			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "GOTO DP");
 			chosen_pool = &dianping;
-		}
-		*/
+			}
+			*/
 
 		/*
-		ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
-		int i = 0;
-		for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "COOKIE %V", &cookies[i]->value);
-		}
-		*/
+		   ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
+		   int i = 0;
+		   for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
+		   ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "COOKIE %V", &cookies[i]->value);
+		   }
+		   */
 	}
 	v->len = strlen((char*)chosen_upstream);
 	v->data = (u_char*)chosen_upstream;
 	/*
-	if (v->data == NULL) {
-		return NGX_ERROR;
-	}
-	ngx_memcpy(v->data, chosen_pool->data, chosen_pool->len);
-	*/
+	   if (v->data == NULL) {
+	   return NGX_ERROR;
+	   }
+	   ngx_memcpy(v->data, chosen_pool->data, chosen_pool->len);
+	   */
 	v->valid = 1;
 
 	return NGX_OK;
