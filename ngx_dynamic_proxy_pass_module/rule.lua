@@ -1,6 +1,15 @@
 --uid = get_cookie("UID");
-upstream = "six@0";
 dp_domain_weight = {};
+--f=io.open("/Users/hupeng/log", "a");
+--f:write(string.format("%s\n", package.cpath));
+local json = require "cjson";
+--f:write(string.format("%s\n", "hupengtest!"));
+--dp_domain_weight = json.decode("{\"six@1\":\"1\",\"six@2\":\"1\"}");
+--for key, value in pairs(dp_domain_weight) do
+--	f:write(string.format("%s %s\n", key, value));
+--end
+--f:close();
+
 function choose_upstream()
 	--f=io.open("/Users/hupeng/log", "aw");
 	uid = get_ngx_http_variable("cookie_uid");
@@ -51,6 +60,7 @@ function choose_upstream()
 			bucket_search = bucket_search + value;
 			if modus < value then
 				upstream = key;
+				break;
 			end
 		end
 
@@ -58,7 +68,6 @@ function choose_upstream()
 end
 
 function set_dp_domain_weight(str)
-	local json = require "cjson";
 	dp_domain_weight = json.decode(str);
 end
 
