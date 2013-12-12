@@ -9,6 +9,10 @@ local json = require "cjson";
 --	f:write(string.format("%s %s\n", key, value));
 --end
 --f:close();
+num = 0;
+for key, value in pairs(dp_domain_weight) do
+	num = num + 1;
+end
 
 function choose_upstream()
 	--f=io.open("/Users/hupeng/log", "aw");
@@ -18,12 +22,16 @@ function choose_upstream()
 	--f:write(string.format("%d %d %d\n", uid, #dp_domain_weight, 1));
 	--f:write(string.format("%s\n", "hupeng"));
 	--f:close();
-	if #dp_domain_weight == 0 then
+	if num == 0 then
 		ups = {get_upstream_list()};
 		--for key, value in pairs(ups) do
 		--	f:write(string.format("%s %s %d %d\n", key, value, 1, 1));
 		--end
 		if #ups == 0 then
+			return;
+		end
+		if #ups == 2 then
+			upstream = ups[1];
 			return;
 		end
 		ups_cnt = #ups;
@@ -49,7 +57,6 @@ function choose_upstream()
 			j = j + 2;
 		end
 	else
-		dp_domain_weight_cnt = #dp_domain_weight;
 		bucket_cnt = 0;
 		for key, value in pairs(dp_domain_weight) do
 			bucket_cnt = bucket_cnt + value;
@@ -58,7 +65,7 @@ function choose_upstream()
 		bucket_search = 0;
 		for key, value in pairs(dp_domain_weight) do
 			bucket_search = bucket_search + value;
-			if modus < value then
+			if modus < bucket_search then
 				upstream = key;
 				break;
 			end

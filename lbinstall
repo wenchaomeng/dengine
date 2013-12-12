@@ -36,3 +36,9 @@ ldconfig
 make
 
 make install
+
+mkdir -p /usr/local/nginx/conf/phoenix-slb/
+
+cp ngx_dynamic_proxy_pass_module/rule.lua /usr/local/nginx/conf/phoenix-slb/rule.lua
+
+cp nginx_lb_test.conf /usr/local/nginx/conf/
