@@ -6,6 +6,14 @@ if [ "$platform" == "GNU/Linux" ]; then
 	yum -y install pcre.x86_64 pcre-devel.x86_64
 fi
 
+cd lua-5.1.4/
+
+make linux
+
+make install
+
+cd ..
+
 cd luajit-2.0
 
 make
