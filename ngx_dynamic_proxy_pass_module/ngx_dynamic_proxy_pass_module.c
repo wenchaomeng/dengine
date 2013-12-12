@@ -261,7 +261,7 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 	                         	lua_getglobal(hdlc->L, "set_dp_domain_weight");
 	                         	lua_pushlstring(hdlc->L, (char*)hdlc->dp_domain_weight.data, strlen((char*)hdlc->dp_domain_weight.data));
 					int ret = lua_pcall(hdlc->L, 1, 0, 0);
-					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "set_dp_domain_weight fail!! %d %s %d", ret, (char*)hdlc->dp_domain_weight.data, hdlc->dp_domain_weight.len);
+					ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "set_dp_domain_weight fail!! %d %s %d", ret, (char*)hdlc->dp_domain_weight.data, hdlc->dp_domain_weight.len);
 				}
 			}
 		}

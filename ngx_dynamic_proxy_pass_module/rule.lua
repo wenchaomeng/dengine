@@ -10,9 +10,6 @@ local json = require "cjson";
 --end
 --f:close();
 num = 0;
-for key, value in pairs(dp_domain_weight) do
-	num = num + 1;
-end
 
 function choose_upstream()
 	--f=io.open("/Users/hupeng/log", "aw");
@@ -76,6 +73,9 @@ end
 
 function set_dp_domain_weight(str)
 	dp_domain_weight = json.decode(str);
+	for key, value in pairs(dp_domain_weight) do
+		num = num + 1;
+	end
 end
 
 --f:write(string.format("%s\n", upstream));
