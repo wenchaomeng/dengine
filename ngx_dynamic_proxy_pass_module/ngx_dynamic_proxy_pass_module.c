@@ -181,8 +181,7 @@ static int get_upstream_list(lua_State *L) {
 	ngx_http_dyups_main_conf_t  *dumcf;
 	dumcf = ngx_http_get_module_main_conf(cur_r, ngx_http_dyups_module);
 
-	ngx_uint_t len, i, chosen_upstream_cnt;
-	len = 0;
+	ngx_uint_t i, chosen_upstream_cnt;
 	chosen_upstream_cnt = 0;
 	ngx_http_dyups_srv_conf_t *duscfs, *duscf;
 	duscfs = dumcf->dy_upstreams.elts;
