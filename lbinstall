@@ -42,7 +42,7 @@ fi
 ldconfig
 
 if [ ! -f "Makefile" ]; then
-	./configure --with-http_upstream_check_module --add-module=ngx_dynamic_proxy_pass_module --with-luajit-inc=/usr/local/include/luajit-2.0 --with-luajit-lib=/usr/local/lib/ --with-http_lua_module --add-module=ngx_http_dyups_module --add-module=nginx_upstream_hash/ --add-module=echo-nginx-module/
+	./configure --with-http_upstream_check_module --add-module=ngx_dynamic_proxy_pass_module --with-luajit-inc=/usr/local/include/luajit-2.0 --with-luajit-lib=/usr/local/lib/ --with-http_lua_module --add-module=ngx_http_dyups_module --add-module=nginx_upstream_hash/ --add-module=echo-nginx-module/ --add-module=headers-more-nginx-module-0.24
 
 	make
 
