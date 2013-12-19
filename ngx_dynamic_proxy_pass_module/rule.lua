@@ -13,7 +13,7 @@ num = 0;
 
 function choose_upstream()
 	--f=io.open("/Users/hupeng/log", "aw");
-	uid = get_ngx_http_variable("cookie_uid");
+	uid = get_ngx_http_variable();
 
 	--uid = "test";
 	--f:write(string.format("%d %d %d\n", uid, #dp_domain_weight, 1));
