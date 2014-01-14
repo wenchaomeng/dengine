@@ -297,7 +297,7 @@ ngx_http_upstream_init_hash_peer(ngx_http_request_t *r,
 
 
 static ngx_int_t
-ngx_http_upstream_get_hash_peer(ngx_peer_connection_t *pc, void *data)
+ngx_http_upstream_get_hash_peer(ngx_peer_connection_t *pc, void *data)  //获取一个上游服务器的IP和端口
 {
     ngx_http_upstream_hash_peer_data_t  *uhpd = data;
     ngx_http_upstream_hash_peer_t       *peer;
@@ -309,7 +309,7 @@ ngx_http_upstream_get_hash_peer(ngx_peer_connection_t *pc, void *data)
     pc->cached = 0;
     pc->connection = NULL;
 
-    peer_index = ngx_http_upstream_get_hash_peer_index(uhpd);
+    peer_index = ngx_http_upstream_get_hash_peer_index(uhpd);//有weight配置则根据weight获取，没有weight配置则根据机器数获取
 
     peer = &uhpd->peers->peer[peer_index];
 
