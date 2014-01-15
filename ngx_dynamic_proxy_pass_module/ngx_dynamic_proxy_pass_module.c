@@ -94,8 +94,8 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		ngx_string("dypp_weight"), // The command name
 		NGX_HTTP_UPS_CONF|NGX_CONF_TAKE1,
 		set_weight, // The command handler
-		NULL,
-		NULL,
+		0,
+		0,
 		NULL
 	},
 
@@ -513,14 +513,14 @@ ngx_dynamic_proxy_pass_filter_merge_conf(ngx_conf_t *cf, void *parent, void *chi
 	ngx_http_dypp_filter_loc_conf_t *prev = parent;
 	ngx_http_dypp_filter_loc_conf_t *conf = child;
 
-	ngx_conf_merge_uint_value(conf->dypp_key_generate, prev->dypp_key_generate, -1);
+	ngx_conf_merge_uint_value(conf->dypp_key_generate, prev->dypp_key_generate, 1);
 	return NGX_CONF_OK;
 }
 
 static ngx_int_t set_header(ngx_http_request_t* r, ngx_str_t* key, ngx_str_t* value){
 	ngx_table_elt_t             *h;
 	ngx_list_part_t             *part;
-	int i;
+	unsigned int i;
 	int matched = 0;
 
 
@@ -612,7 +612,6 @@ static ngx_int_t has_generate_uid(ngx_http_request_t* r){
 
 static char *
 set_weight(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
-	char  *p = conf;
 	weight_list_on = 1;
 	ngx_int_t        np;
 	ngx_str_t        *value;
@@ -632,7 +631,7 @@ set_weight(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 
 	if (cmd->post) {
 		post = cmd->post;
-		return post->post_handler(cf, post, np);
+		return post->post_handler(cf, post, (void*)&np);
 	}
 	return NGX_CONF_OK;
 }
