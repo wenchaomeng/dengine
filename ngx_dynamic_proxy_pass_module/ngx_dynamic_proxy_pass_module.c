@@ -7,7 +7,7 @@
 #include "ngx_http_dyups_module.h"
 
 #define DEFAULT_LB_LUA_FILE "/usr/local/nginx/conf/phoenix-slb/rule.lua"
-#define DEFAULT_COOKIE_UID "cookie_uid"
+#define DEFAULT_DYPP_KEY "dypp_key"
 #define DEFAULT_MAX_SERVER 200
 
 typedef struct {
@@ -58,6 +58,8 @@ static char *ngx_dynamic_proxy_pass_filter_merge_conf(ngx_conf_t *cf, void *pare
 static ngx_int_t set_header(ngx_http_request_t* r, ngx_str_t* key, ngx_str_t* value);
 
 static unsigned long generate_uid();
+
+static unsigned long get_uid();
 
 static ngx_int_t has_generate_uid(ngx_http_request_t* r);
 
@@ -246,7 +248,7 @@ static int get_ngx_http_variable(lua_State *L) {
 	if(!vv || vv->len == 0 || !vv->data || vv->not_found == 1){
 		char buf[200];
 		memset(buf, 0, 200);
-		sprintf(buf, "%lu", uid);
+		sprintf(buf, "%lu", generate_uid());
 		lua_pushlstring(L, buf, 1);//TODO
 		return 1;
 //		lowcase = ngx_pnalloc(cur_r->pool, ngx_strlen(DEFAULT_COOKIE_UUID));
@@ -369,12 +371,13 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 			dypp_key = malloc(sizeof(ngx_str_t));
 			if(dypp_key){
 				memset(dypp_key, 0, sizeof(ngx_str_t));
-				dypp_key->data = malloc(strlen(DEFAULT_COOKIE_UID) + 1);
+				dypp_key->data = malloc(strlen("cookie_") + strlen(DEFAULT_DYPP_KEY) + 1);
 				if(dypp_key->data){
-					memset(dypp_key->data, 0, strlen(DEFAULT_COOKIE_UID) + 1);
-					ngx_memcpy(dypp_key->data, DEFAULT_COOKIE_UID, strlen(DEFAULT_COOKIE_UID));
+					memset(dypp_key->data, 0, strlen("cookie_") + strlen(DEFAULT_DYPP_KEY) + 1);
+					ngx_sprintf(dypp_key->data, "%s%s", "cookie_", DEFAULT_DYPP_KEY);
+					//ngx_memcpy(dypp_key->data, DEFAULT_DYPP_KEY, strlen(DEFAULT_DYPP_KEY));
 				}
-				dypp_key->len = strlen(DEFAULT_COOKIE_UID);
+				dypp_key->len = strlen("cookie_") + strlen(DEFAULT_DYPP_KEY);
 			}
 		}
 		else{
@@ -477,12 +480,11 @@ static ngx_int_t ngx_dynamic_proxy_pass_header_filter(ngx_http_request_t *r){
 		ngx_memcpy(key.data, "Set-Cookie", ngx_strlen("Set-Cookie"));
 		key.len = ngx_strlen("Set-Cookie");
 
-		unsigned long tmp = generate_uid();
 		value.data = ngx_pcalloc(r->pool, 1000 + 1);
 		if(value.data == NULL){
 			return ngx_http_next_header_filter(r);
 		}
-		ngx_sprintf(value.data, "%s%l","uid = ", tmp);
+		ngx_sprintf(value.data, "%s%s%l", DEFAULT_DYPP_KEY, " = ", get_uid());
 		value.len = ngx_strlen(value.data);
 		set_header(r, &key, &value);
 
@@ -593,14 +595,18 @@ matched:
 }
 
 static unsigned long generate_uid(){
-	return uid++;
+	return ++uid;
+}
+
+static unsigned long get_uid(){
+	return uid;
 }
 
 static ngx_int_t has_generate_uid(ngx_http_request_t* r){
 	ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
 	int i = 0;
 	for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
-		if(strstr((char*)(cookies[i])->value.data, "uid") == NULL){
+		if(strstr((char*)(cookies[i])->value.data, DEFAULT_DYPP_KEY) == NULL){
 			continue;
 		}
 		else{

@@ -21,6 +21,7 @@ function choose_upstream()
 	--	f:write(string.format("%s %s %d %d\n", key, value, 1, 1));
 	--end
 	if #ups == 0 then
+		upstream = nil;
 		return;
 	end
 	if #ups == 2 then
