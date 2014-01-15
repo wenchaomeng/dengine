@@ -1,0 +1,16 @@
+#!/bin/bash
+
+/usr/local/nginx/sbin/nginx -c /usr/local/nginx/conf/nginx_lb_test.conf
+
+sleep 2
+
+curl -v --cookie uid=1 http://127.0.0.1 >> /tmp/testlb
+curl -v --cookie uid=2 http://127.0.0.1 >> /tmp/testlb
+curl -v --cookie uid=3 http://127.0.0.1 >> /tmp/testlb
+curl -v --cookie uid=4 http://127.0.0.1 >> /tmp/testlb
+
+killall -9 nginx
+cat /tmp/testlb
+awk 'BEGIN{num=0;}{if($2 == 6061) num++}END{if(num==2) print "success!"; else print "fail!"}' /tmp/testlb
+rm /tmp/testlb
+
