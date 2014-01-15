@@ -329,6 +329,9 @@ static u_char* call_lua(ngx_http_request_t *r, lua_State *L) {
 	// TODO can we use lua_tostring(L, -1) and is it faster?
 	lua_getglobal(L, "upstream");
 	const char *lua_result = lua_tostring(L, -1);
+	if(!lua_result){
+		return NULL;
+	}
 	char* chosen_upstream = ngx_pcalloc(r->pool, strlen(lua_result) + 1);
 	strcpy(chosen_upstream, lua_result);
 	ngx_log_debug1(NGX_LOG_DEBUG, r->connection->log, 0, "[dypp] lua result %s", chosen_upstream);
@@ -395,7 +398,9 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 	//ngx_str_t dianping = ngx_string("dianping");
 
 	u_char *chosen_upstream = call_lua(r, hdlc->L);
-
+	if(!chosen_upstream){
+		return NGX_ERROR;
+	}
 	/*
 	   if(ahlf == NULL) {
 	   call_lua(r);
