@@ -256,13 +256,13 @@ static int get_ngx_http_variable(lua_State *L) {
 		if(!elt){
 			return 1;
 		}
-		elt->key.data = ngx_pnalloc(cur_r->pool, dypp_key->len - ngx_strlen("cookie_"));
+		elt->key.data = ngx_pcalloc(cur_r->pool, dypp_key->len - ngx_strlen("cookie_") + 1);
 		if(!elt->key.data){
 			return 1;
 		}
 		elt->key.len = dypp_key->len - ngx_strlen("cookie_");
 		ngx_memcpy(elt->key.data, dypp_key->data + ngx_strlen("cookie_"), elt->key.len);
-		elt->value.data = ngx_pnalloc(cur_r->pool, 100);
+		elt->value.data = ngx_pcalloc(cur_r->pool, 100);
 		if(!elt->value.data){
 			return 1;
 		}
