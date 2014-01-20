@@ -61,7 +61,7 @@ static unsigned long generate_uid();
 
 static unsigned long get_uid();
 
-static ngx_int_t has_generate_uid(ngx_http_request_t* r);
+static u_char* has_generate_uid(ngx_http_request_t* r);
 
 static char * set_weight(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
@@ -236,7 +236,8 @@ static int get_ngx_http_variable(lua_State *L) {
 	ngx_uint_t hash;
 	ngx_str_t name;
 	ngx_http_variable_value_t *vv;
-
+	ngx_list_t *headers;
+	ngx_table_elt_t* elt;
 	//	p = (u_char*)lua_tolstring(L, 1, &len);
 	lowcase = ngx_pnalloc(cur_r->pool, dypp_key->len);
 	hash = ngx_hash_strlow(lowcase, dypp_key->data, dypp_key->len);
@@ -250,12 +251,34 @@ static int get_ngx_http_variable(lua_State *L) {
 		memset(buf, 0, 200);
 		sprintf(buf, "%lu", generate_uid());
 		lua_pushlstring(L, buf, 1);//TODO
+		headers = &(cur_r->headers_in.headers);
+		elt = ngx_list_push(headers);
+		if(!elt){
+			return 1;
+		}
+		elt->key.data = ngx_pnalloc(cur_r->pool, dypp_key->len - ngx_strlen("cookie_"));
+		if(!elt->key.data){
+			return 1;
+		}
+		elt->key.len = dypp_key->len - ngx_strlen("cookie_");
+		ngx_memcpy(elt->key.data, dypp_key->data + ngx_strlen("cookie_"), elt->key.len);
+		elt->value.data = ngx_pnalloc(cur_r->pool, 100);
+		if(!elt->value.data){
+			return 1;
+		}
+		ngx_sprintf(elt->value.data, "%d", get_uid());
+		elt->value.len = ngx_strlen(elt->value.data);
+		elt->lowcase_key = ngx_pnalloc(cur_r->pool, elt->key.len);
+		if(!elt->lowcase_key){
+			return 1;
+		}
+		elt->hash = ngx_hash_strlow(elt->lowcase_key, elt->key.data, elt->key.len);
 		return 1;
-//		lowcase = ngx_pnalloc(cur_r->pool, ngx_strlen(DEFAULT_COOKIE_UUID));
-//		hash = ngx_hash_strlow(lowcase, DEFAULT_COOKIE_UUID, ngx_strlen(DEFAULT_COOKIE_UUID));//TODO
-//		name.len = ngx_strlen(DEFAULT_COOKIE_UUID);
-//		name.data = lowcase;
-//		vv = ngx_http_get_variable(cur_r, &name, hash);
+		//		lowcase = ngx_pnalloc(cur_r->pool, ngx_strlen(DEFAULT_COOKIE_UUID));
+		//		hash = ngx_hash_strlow(lowcase, DEFAULT_COOKIE_UUID, ngx_strlen(DEFAULT_COOKIE_UUID));//TODO
+		//		name.len = ngx_strlen(DEFAULT_COOKIE_UUID);
+		//		name.data = lowcase;
+		//		vv = ngx_http_get_variable(cur_r, &name, hash);
 	}
 	if(vv && vv->len > 0 && vv->data && vv->not_found != 1) {
 		lua_pushlstring(L, (char*)vv->data, vv->len);
@@ -466,27 +489,31 @@ ngx_dynamic_proxy_pass_filter_init(ngx_conf_t *cf)
 
 static ngx_int_t ngx_dynamic_proxy_pass_header_filter(ngx_http_request_t *r){
 	ngx_http_dypp_filter_loc_conf_t  *conf;
+	u_char* data;
+
 	conf = ngx_http_get_module_loc_conf(r, ngx_dynamic_proxy_pass_filter_module);
 
 	if(conf->dypp_key_generate == 1){
-		if(has_generate_uid(r) == NGX_OK){
-			return ngx_http_next_header_filter(r);
-		}
-		ngx_str_t key, value;
-		key.data = ngx_pcalloc(r->pool, ngx_strlen("Set-Cookie") + 1);
-		if(key.data == NULL){
-			return ngx_http_next_header_filter(r);
-		}
-		ngx_memcpy(key.data, "Set-Cookie", ngx_strlen("Set-Cookie"));
-		key.len = ngx_strlen("Set-Cookie");
+		data = has_generate_uid(r);
+		if(data != NULL){
+			ngx_str_t key, value;
+			key.data = ngx_pcalloc(r->pool, ngx_strlen("Set-Cookie") + 1);
+			if(key.data == NULL){
+				return ngx_http_next_header_filter(r);
+			}
+			ngx_memcpy(key.data, "Set-Cookie", ngx_strlen("Set-Cookie"));
+			key.len = ngx_strlen("Set-Cookie");
 
-		value.data = ngx_pcalloc(r->pool, 1000 + 1);
-		if(value.data == NULL){
-			return ngx_http_next_header_filter(r);
+			value.data = ngx_pcalloc(r->pool, 1000 + 1);
+			if(value.data == NULL){
+				return ngx_http_next_header_filter(r);
+			}
+			ngx_sprintf(value.data, "%s%s%s", dypp_key->data + ngx_strlen("cookie_"), " = ", data);
+			value.len = ngx_strlen(value.data);
+			set_header(r, &key, &value);
 		}
-		ngx_sprintf(value.data, "%s%s%l", DEFAULT_DYPP_KEY, " = ", get_uid());
-		value.len = ngx_strlen(value.data);
-		set_header(r, &key, &value);
+
+		return ngx_http_next_header_filter(r);
 
 		//ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "hupengtest dynamic proxy module!!!!!!!!!!!!");
 	}
@@ -602,18 +629,42 @@ static unsigned long get_uid(){
 	return uid;
 }
 
-static ngx_int_t has_generate_uid(ngx_http_request_t* r){
-	ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
-	int i = 0;
-	for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
-		if(strstr((char*)(cookies[i])->value.data, DEFAULT_DYPP_KEY) == NULL){
-			continue;
-		}
-		else{
-			return NGX_OK;
-		}
+static u_char* has_generate_uid(ngx_http_request_t* r){
+	u_char *lowcase;
+	u_char *data;
+	ngx_uint_t hash;
+	ngx_str_t name;
+	ngx_http_variable_value_t *vv;
+
+	lowcase = ngx_pcalloc(r->pool, dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_"));
+	if(!lowcase){
+		return NULL;
 	}
-	return NGX_ERROR;
+	data = ngx_pcalloc(r->pool, dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_") + 1);
+	if(!data){
+		return NULL;
+	}
+	ngx_sprintf(data, "%s%s", "http_", dypp_key->data + ngx_strlen("cookie_"));
+	hash = ngx_hash_strlow(lowcase, data, dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_"));
+
+	name.len = dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_");
+	name.data = lowcase;
+	vv = ngx_http_get_variable(r, &name, hash);
+	if(vv->valid == 1 && vv->not_found == 0 && vv->data){
+		return vv->data;
+	}
+	return NULL;
+	//	ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
+	//	int i = 0;
+	//	for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
+	//		if(strstr((char*)(cookies[i])->value.data, DEFAULT_DYPP_KEY) == NULL){
+	//			continue;
+	//		}
+	//		else{
+	//			return NGX_OK;
+	//		}
+	//	}
+	//	return NGX_ERROR;
 }
 
 static char *
