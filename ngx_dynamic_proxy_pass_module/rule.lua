@@ -14,12 +14,9 @@ function choose_upstream()
 
 	--uid = "test";
 	--f:write(string.format("%d %d %d\n", uid, #dp_domain_weight, 1));
-	--f:write(string.format("%s\n", "hupeng"));
-	--f:close();
+	--f:write(string.format("%d\n", uid));
 	ups = {get_upstream_list()};
-	--for key, value in pairs(ups) do
-	--	f:write(string.format("%s %s %d %d\n", key, value, 1, 1));
-	--end
+	
 	if #ups == 0 then
 		upstream = nil;
 		return;
@@ -29,6 +26,7 @@ function choose_upstream()
 		return;
 	end
 	ups_cnt = #ups;
+	--f:close();
 	i = 2;
 	bucket_cnt = 0;
 	while i <= ups_cnt do
