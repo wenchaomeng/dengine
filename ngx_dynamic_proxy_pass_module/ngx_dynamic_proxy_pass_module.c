@@ -289,7 +289,7 @@ static int get_ngx_http_variable(lua_State *L) {
 		char buf[200];
 		memset(buf, 0, 200);
 		sprintf(buf, "%lu", generate_uid());
-		lua_pushlstring(L, buf, 1);//TODO
+		lua_pushlstring(L, buf, ngx_strlen(buf));//TODO
 		headers = &(cur_r->headers_in.headers);
 		elt = ngx_list_push(headers);
 		if(!elt){
