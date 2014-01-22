@@ -4,10 +4,10 @@
 
 sleep 2
 
-curl -v --cookie uid=1 http://127.0.0.1 >> /tmp/testlb
-curl -v --cookie uid=2 http://127.0.0.1 >> /tmp/testlb
-curl -v --cookie uid=3 http://127.0.0.1 >> /tmp/testlb
-curl -v --cookie uid=4 http://127.0.0.1 >> /tmp/testlb
+curl --cookie uid=1 http://127.0.0.1 >> /tmp/testlb
+curl --cookie uid=2 http://127.0.0.1 >> /tmp/testlb
+curl --cookie uid=3 http://127.0.0.1 >> /tmp/testlb
+curl --cookie uid=4 http://127.0.0.1 >> /tmp/testlb
 
 killall -9 nginx
 cat /tmp/testlb
