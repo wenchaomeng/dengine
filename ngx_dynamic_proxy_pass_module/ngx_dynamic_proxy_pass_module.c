@@ -9,6 +9,7 @@
 #define DEFAULT_LB_LUA_FILE "/usr/local/nginx/conf/phoenix-slb/rule.lua"
 #define DEFAULT_DYPP_KEY "dypp_key"
 #define DEFAULT_MAX_SERVER 200
+#define LUA_VM_MAX_NUM 100
 
 typedef struct {
 	ngx_str_t dp_domain;
@@ -21,12 +22,17 @@ typedef struct {
 	ngx_uint_t dypp_key_generate;	
 } ngx_http_dypp_filter_loc_conf_t;
 
+typedef struct {
+	ngx_str_t name;
+	lua_State *L;
+}lua_vm;
+
 ngx_http_request_t *cur_r;
 ngx_str_t *cur_dp_domain;
-ngx_str_t *dypp_key;
 unsigned long uid = 0;
 int weight_list[DEFAULT_MAX_SERVER];
 int weight_list_on = 0;
+lua_vm l_vm[LUA_VM_MAX_NUM];
 
 //static ngx_http_output_body_filter_pt  ngx_http_next_body_filter;
 static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
@@ -36,6 +42,8 @@ static void* ngx_http_dypp_create_loc_conf(ngx_conf_t* cf);
 static char* ngx_http_dypp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 
 static ngx_int_t ngx_http_dypp_preconfig(ngx_conf_t *cf);
+
+static ngx_int_t  ngx_http_dypp_init_process(ngx_cycle_t *cycle);
 
 ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 
@@ -150,7 +158,7 @@ ngx_module_t ngx_dynamic_proxy_pass_module = {
 	NGX_HTTP_MODULE,
 	NULL,
 	NULL,
-	NULL,
+	&ngx_http_dypp_init_process,
 	NULL,
 	NULL,
 	NULL,
@@ -221,6 +229,30 @@ ngx_http_dypp_preconfig(ngx_conf_t *cf){
 	return NGX_OK;
 }
 
+
+static ngx_int_t  ngx_http_dypp_init_process(ngx_cycle_t *cycle){
+	l_vm[0].L = luaL_newstate();
+	if(l_vm[0].L == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Can not init lua");
+		return NGX_ERROR;
+	}
+	luaL_openlibs(l_vm[0].L);
+	lua_register(l_vm[0].L, "get_cookie", get_cookie);
+	lua_register(l_vm[0].L, "get_upstream_list", get_upstream_list);
+	lua_register(l_vm[0].L, "get_ngx_http_variable", get_ngx_http_variable);
+
+	if (luaL_loadfile(l_vm[0].L, DEFAULT_LB_LUA_FILE) || lua_pcall(l_vm[0].L,0,0,0)) {
+		return NGX_ERROR;
+	}
+	l_vm[0].name.len = ngx_strlen(DEFAULT_LB_LUA_FILE);
+	l_vm[0].name.data = ngx_pcalloc(cycle->pool, l_vm[0].name.len + 1);
+	if(!l_vm[0].name.data){
+		return NGX_ERROR;
+	}
+	ngx_memcpy(l_vm[0].name.data, DEFAULT_LB_LUA_FILE, l_vm[0].name.len);	
+	return NGX_OK;
+}
+
 static int get_cookie(lua_State *L) {
 	ngx_str_t cookie_name;
 	cookie_name.data = (u_char*)lua_tolstring(L, 1, &cookie_name.len);
@@ -238,11 +270,18 @@ static int get_ngx_http_variable(lua_State *L) {
 	ngx_http_variable_value_t *vv;
 	ngx_list_t *headers;
 	ngx_table_elt_t* elt;
+	ngx_http_dypp_loc_conf_t *hdlc;
+	ngx_str_t dypp_key;
 	//	p = (u_char*)lua_tolstring(L, 1, &len);
-	lowcase = ngx_pnalloc(cur_r->pool, dypp_key->len);
-	hash = ngx_hash_strlow(lowcase, dypp_key->data, dypp_key->len);
+	
+	hdlc = ngx_http_get_module_loc_conf(cur_r, ngx_dynamic_proxy_pass_module);
+	dypp_key.len = ngx_strlen("cookie_") + hdlc->dypp_key.len;
+	dypp_key.data = ngx_pcalloc(cur_r->pool, dypp_key.len + 1);
+	ngx_sprintf(dypp_key.data, "%s%s", "cookie_", hdlc->dypp_key.data);
+	lowcase = ngx_pnalloc(cur_r->pool, dypp_key.len);
+	hash = ngx_hash_strlow(lowcase, dypp_key.data, dypp_key.len);
 
-	name.len = dypp_key->len;
+	name.len = dypp_key.len;
 	name.data = lowcase;
 	vv = ngx_http_get_variable(cur_r, &name, hash);
 
@@ -256,12 +295,8 @@ static int get_ngx_http_variable(lua_State *L) {
 		if(!elt){
 			return 1;
 		}
-		elt->key.data = ngx_pcalloc(cur_r->pool, dypp_key->len - ngx_strlen("cookie_") + 1);
-		if(!elt->key.data){
-			return 1;
-		}
-		elt->key.len = dypp_key->len - ngx_strlen("cookie_");
-		ngx_memcpy(elt->key.data, dypp_key->data + ngx_strlen("cookie_"), elt->key.len);
+		elt->key.data = hdlc->dypp_key.data;
+		elt->key.len = hdlc->dypp_key.len;
 		elt->value.data = ngx_pcalloc(cur_r->pool, 100);
 		if(!elt->value.data){
 			return 1;
@@ -369,54 +404,36 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 	ngx_http_dypp_loc_conf_t *hdlc;
 	hdlc = ngx_http_get_module_loc_conf(r, ngx_dynamic_proxy_pass_module);
 	if(hdlc->L == NULL){
-		hdlc->L = luaL_newstate();
-		if(hdlc->L == NULL) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Can not init lua");
-			return NGX_ERROR;
-		}
-		luaL_openlibs(hdlc->L);
-		lua_register(hdlc->L, "get_cookie", get_cookie);
-		lua_register(hdlc->L, "get_upstream_list", get_upstream_list);
-		lua_register(hdlc->L, "get_ngx_http_variable", get_ngx_http_variable);
-
 		if ((char*)hdlc->dypp_lua_file.data == NULL || hdlc->dypp_lua_file.len == 0){
-			if (luaL_loadfile(hdlc->L, DEFAULT_LB_LUA_FILE) || lua_pcall(hdlc->L,0,0,0)) {
-				return NGX_ERROR;
-			}
+			hdlc->L = l_vm[0].L;
 		}
 		else{
-			if (luaL_loadfile(hdlc->L, (char*)hdlc->dypp_lua_file.data) || lua_pcall(hdlc->L,0,0,0)) {
-				return NGX_ERROR;
-			}
-		}
-
-		if (hdlc->dypp_key.data == NULL || hdlc->dypp_key.len == 0) {
-			dypp_key = malloc(sizeof(ngx_str_t));
-			if(dypp_key){
-				memset(dypp_key, 0, sizeof(ngx_str_t));
-				dypp_key->data = malloc(strlen("cookie_") + strlen(DEFAULT_DYPP_KEY) + 1);
-				if(dypp_key->data){
-					memset(dypp_key->data, 0, strlen("cookie_") + strlen(DEFAULT_DYPP_KEY) + 1);
-					ngx_sprintf(dypp_key->data, "%s%s", "cookie_", DEFAULT_DYPP_KEY);
-					//ngx_memcpy(dypp_key->data, DEFAULT_DYPP_KEY, strlen(DEFAULT_DYPP_KEY));
+			int i = 0;
+			while(l_vm[i].name.data != NULL && l_vm[i].name.len != 0){
+				if(l_vm[i].name.len ==  hdlc->dypp_lua_file.len && ngx_strncmp(l_vm[i].name.data, hdlc->dypp_lua_file.data, l_vm[i].name.len) == 0){
+					hdlc->L = l_vm[i].L;
 				}
-				dypp_key->len = strlen("cookie_") + strlen(DEFAULT_DYPP_KEY);
+				i++;
 			}
-		}
-		else{
-			dypp_key = malloc(sizeof(ngx_str_t));
-			if(dypp_key){
-				memset(dypp_key, 0, sizeof(ngx_str_t));
-				dypp_key->data = malloc(strlen("cookie_") + hdlc->dypp_key.len + 1);
-				if(dypp_key->data){
-					memset(dypp_key->data, 0, strlen("cookie_") + hdlc->dypp_key.len + 1);
-					ngx_memcpy(dypp_key->data, "cookie_", strlen("cookie_"));
-					ngx_memcpy(dypp_key->data + strlen("cookie_"), hdlc->dypp_key.data, hdlc->dypp_key.len);
+			if(!hdlc->L){
+				hdlc->L = luaL_newstate();
+				if(hdlc->L == NULL) {
+					ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "Can not init lua");
+					return NGX_ERROR;
 				}
-			}
-			dypp_key->len = hdlc->dypp_key.len + strlen("cookie_");	
-		}
+				luaL_openlibs(hdlc->L);
+				lua_register(hdlc->L, "get_cookie", get_cookie);
+				lua_register(hdlc->L, "get_upstream_list", get_upstream_list);
+				lua_register(hdlc->L, "get_ngx_http_variable", get_ngx_http_variable);
 
+				if (luaL_loadfile(hdlc->L, (char*)hdlc->dypp_lua_file.data) || lua_pcall(hdlc->L,0,0,0)) {
+					return NGX_ERROR;
+				}
+				l_vm[i].L = hdlc->L;
+				l_vm[i].name.data = hdlc->dypp_lua_file.data;
+				l_vm[i].name.len = hdlc->dypp_lua_file.len;
+			}
+		}
 	}
 	cur_dp_domain = &hdlc->dp_domain;
 
@@ -490,7 +507,9 @@ ngx_dynamic_proxy_pass_filter_init(ngx_conf_t *cf)
 static ngx_int_t ngx_dynamic_proxy_pass_header_filter(ngx_http_request_t *r){
 	ngx_http_dypp_filter_loc_conf_t  *conf;
 	u_char* data;
-
+	ngx_http_dypp_loc_conf_t *hdlc;
+	
+	hdlc = ngx_http_get_module_loc_conf(r, ngx_dynamic_proxy_pass_module);
 	conf = ngx_http_get_module_loc_conf(r, ngx_dynamic_proxy_pass_filter_module);
 
 	if(conf->dypp_key_generate == 1){
@@ -508,7 +527,7 @@ static ngx_int_t ngx_dynamic_proxy_pass_header_filter(ngx_http_request_t *r){
 			if(value.data == NULL){
 				return ngx_http_next_header_filter(r);
 			}
-			ngx_sprintf(value.data, "%s%s%s", dypp_key->data + ngx_strlen("cookie_"), " = ", data);
+			ngx_sprintf(value.data, "%s%s%s", hdlc->dypp_key.data, " = ", data);
 			value.len = ngx_strlen(value.data);
 			set_header(r, &key, &value);
 		}
@@ -545,6 +564,9 @@ ngx_dynamic_proxy_pass_filter_merge_conf(ngx_conf_t *cf, void *parent, void *chi
 	ngx_conf_merge_uint_value(conf->dypp_key_generate, prev->dypp_key_generate, 1);
 	return NGX_CONF_OK;
 }
+
+
+
 
 static ngx_int_t set_header(ngx_http_request_t* r, ngx_str_t* key, ngx_str_t* value){
 	ngx_table_elt_t             *h;
@@ -635,36 +657,28 @@ static u_char* has_generate_uid(ngx_http_request_t* r){
 	ngx_uint_t hash;
 	ngx_str_t name;
 	ngx_http_variable_value_t *vv;
+	ngx_http_dypp_loc_conf_t *hdlc;
+	
+	hdlc = ngx_http_get_module_loc_conf(r, ngx_dynamic_proxy_pass_module);
 
-	lowcase = ngx_pcalloc(r->pool, dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_"));
+	lowcase = ngx_pcalloc(r->pool, hdlc->dypp_key.len + ngx_strlen("http_"));
 	if(!lowcase){
 		return NULL;
 	}
-	data = ngx_pcalloc(r->pool, dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_") + 1);
+	data = ngx_pcalloc(r->pool, hdlc->dypp_key.len + ngx_strlen("http_") + 1);
 	if(!data){
 		return NULL;
 	}
-	ngx_sprintf(data, "%s%s", "http_", dypp_key->data + ngx_strlen("cookie_"));
-	hash = ngx_hash_strlow(lowcase, data, dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_"));
+	ngx_sprintf(data, "%s%s", "http_", hdlc->dypp_key.data);
+	hash = ngx_hash_strlow(lowcase, data, hdlc->dypp_key.len + ngx_strlen("http_"));
 
-	name.len = dypp_key->len - ngx_strlen("cookie_") + ngx_strlen("http_");
+	name.len = hdlc->dypp_key.len + ngx_strlen("http_");
 	name.data = lowcase;
 	vv = ngx_http_get_variable(r, &name, hash);
 	if(vv->valid == 1 && vv->not_found == 0 && vv->data){
 		return vv->data;
 	}
 	return NULL;
-	//	ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
-	//	int i = 0;
-	//	for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
-	//		if(strstr((char*)(cookies[i])->value.data, DEFAULT_DYPP_KEY) == NULL){
-	//			continue;
-	//		}
-	//		else{
-	//			return NGX_OK;
-	//		}
-	//	}
-	//	return NGX_ERROR;
 }
 
 static char *
