@@ -472,7 +472,7 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 
 
 ngx_int_t
-ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
+ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name) //添加一个nginx变量
 {
     ngx_uint_t                  i;
     ngx_http_variable_t        *v;

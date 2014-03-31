@@ -39,7 +39,7 @@ struct ngx_http_variable_s {
     uintptr_t                     data;
     ngx_uint_t                    flags;
     ngx_uint_t                    index;
-};
+};//存储nginx变量的数据结构
 
 
 ngx_http_variable_t *ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name,

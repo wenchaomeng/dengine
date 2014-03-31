@@ -35,7 +35,7 @@ typedef struct {
 } ngx_event_mutex_t;
 
 
-struct ngx_event_s {
+struct ngx_event_s { //维护注册进kevent的事件, 即传给kevent的数据结构
     void            *data;
 
     unsigned         write:1;

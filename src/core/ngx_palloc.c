@@ -149,7 +149,7 @@ ngx_pnalloc(ngx_pool_t *pool, size_t size)
     u_char      *m;
     ngx_pool_t  *p;
 
-    if (size <= pool->max) {
+    if (size <= pool->max) { 
 
         p = pool->current;
 
@@ -166,10 +166,10 @@ ngx_pnalloc(ngx_pool_t *pool, size_t size)
 
         } while (p);
 
-        return ngx_palloc_block(pool, size);
+        return ngx_palloc_block(pool, size); //如果要分配的值小于pool的最大值，且分配不到空间，则新建一个pool加入pool队列中
     }
 
-    return ngx_palloc_large(pool, size);
+    return ngx_palloc_large(pool, size);//超过pool->max的大小使用large指针
 }
 
 

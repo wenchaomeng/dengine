@@ -898,7 +898,7 @@ ngx_http_rewrite_variable(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
 static char *
 ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_rewrite_loc_conf_t  *lcf = conf;
+    ngx_http_rewrite_loc_conf_t  *lcf = conf;//存储set指令value值的数据结构
 
     ngx_int_t                            index;
     ngx_str_t                           *value;

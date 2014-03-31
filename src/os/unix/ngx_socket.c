@@ -24,7 +24,7 @@
 #if (NGX_HAVE_FIONBIO)
 
 int
-ngx_nonblocking(ngx_socket_t s)
+ngx_nonblocking(ngx_socket_t s) //将套接口设置为非阻塞
 {
     int  nb;
 

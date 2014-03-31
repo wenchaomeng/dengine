@@ -275,9 +275,16 @@ static int get_ngx_http_variable(lua_State *L) {
 	//	p = (u_char*)lua_tolstring(L, 1, &len);
 	
 	hdlc = ngx_http_get_module_loc_conf(cur_r, ngx_dynamic_proxy_pass_module);
-	dypp_key.len = ngx_strlen("cookie_") + hdlc->dypp_key.len;
-	dypp_key.data = ngx_pcalloc(cur_r->pool, dypp_key.len + 1);
-	ngx_sprintf(dypp_key.data, "%s%s", "cookie_", hdlc->dypp_key.data);
+	if(hdlc->dypp_key.len == 0 || hdlc->dypp_key.data == NULL){
+		dypp_key.len = ngx_strlen("cookie_") + ngx_strlen(DEFAULT_DYPP_KEY);
+		dypp_key.data = ngx_pcalloc(cur_r->pool, dypp_key.len + 1);
+		ngx_sprintf(dypp_key.data, "%s%s", "cookie_", DEFAULT_DYPP_KEY);
+	}
+	else{
+		dypp_key.len = ngx_strlen("cookie_") + hdlc->dypp_key.len;
+		dypp_key.data = ngx_pcalloc(cur_r->pool, dypp_key.len + 1);
+		ngx_sprintf(dypp_key.data, "%s%s", "cookie_", hdlc->dypp_key.data);
+	}
 	lowcase = ngx_pnalloc(cur_r->pool, dypp_key.len);
 	hash = ngx_hash_strlow(lowcase, dypp_key.data, dypp_key.len);
 
@@ -693,7 +700,9 @@ set_weight(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 	if (np == NGX_ERROR) {
 		return "invalid number";
 	}
-
+	if (np <= 0) {
+		return "invalid number, dypp_weight must be greater than 0";
+	}
 	int i = 0;
 	while(weight_list[i] != 0){
 		i++;

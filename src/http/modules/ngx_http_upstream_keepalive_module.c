@@ -19,7 +19,7 @@ typedef struct {
     ngx_http_upstream_init_pt          original_init_upstream;
     ngx_http_upstream_init_peer_pt     original_init_peer;
 
-} ngx_http_upstream_keepalive_srv_conf_t;
+} ngx_http_upstream_keepalive_srv_conf_t;// 保存keepalive的cache队列和free队列
 
 
 typedef struct {
@@ -136,7 +136,7 @@ ngx_http_upstream_init_keepalive(ngx_conf_t *cf,
     kcf = ngx_http_conf_upstream_srv_conf(us,
                                           ngx_http_upstream_keepalive_module);
 
-    if (kcf->original_init_upstream(cf, us) != NGX_OK) {
+    if (kcf->original_init_upstream(cf, us) != NGX_OK) { //先初始化upstream原先的选路算法
         return NGX_ERROR;
     }
 
@@ -158,7 +158,7 @@ ngx_http_upstream_init_keepalive(ngx_conf_t *cf,
     for (i = 0; i < kcf->max_cached; i++) {
         ngx_queue_insert_head(&kcf->free, &cached[i].queue);
         cached[i].conf = kcf;
-    }
+    } //将cache队列全部加入free队列中
 
     return NGX_OK;
 }
@@ -488,7 +488,7 @@ ngx_http_upstream_keepalive_create_conf(ngx_conf_t *cf)
 
 
 static char *
-ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) //keepalive命令初始化函数
 {
     ngx_http_upstream_srv_conf_t            *uscf;
     ngx_http_upstream_keepalive_srv_conf_t  *kcf;
@@ -516,7 +516,7 @@ ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     value = cf->args->elts;
 
-    n = ngx_atoi(value[1].data, value[1].len);
+    n = ngx_atoi(value[1].data, value[1].len);//从配置文件中读取配置
 
     if (n == NGX_ERROR || n == 0) {
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,

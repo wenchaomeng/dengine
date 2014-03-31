@@ -34,7 +34,7 @@ typedef void (*ngx_event_save_peer_session_pt)(ngx_peer_connection_t *pc,
 #endif
 
 
-struct ngx_peer_connection_s {
+struct ngx_peer_connection_s { //维护一个和后端的连接
     ngx_connection_t                *connection;
 
     struct sockaddr                 *sockaddr;

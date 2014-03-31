@@ -34,7 +34,7 @@ ngx_array_create(ngx_pool_t *p, ngx_uint_t n, size_t size)
 
 
 void
-ngx_array_destroy(ngx_array_t *a)
+ngx_array_destroy(ngx_array_t *a)  //如果数组在内存池末尾的区段，则可以释放内存，那不在末尾岂不是不能释放?
 {
     ngx_pool_t  *p;
 
@@ -51,13 +51,13 @@ ngx_array_destroy(ngx_array_t *a)
 
 
 void *
-ngx_array_push(ngx_array_t *a)
+ngx_array_push(ngx_array_t *a) 
 {
     void        *elt, *new;
     size_t       size;
     ngx_pool_t  *p;
 
-    if (a->nelts == a->nalloc) {
+    if (a->nelts == a->nalloc) {//如果数组已满，则扩容为原来的两倍，岂不是一会内存池就爆了?  -> 内存池是可以扩展的
 
         /* the array is full */
 

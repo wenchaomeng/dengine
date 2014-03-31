@@ -2188,7 +2188,7 @@ ngx_http_terminate_handler(ngx_http_request_t *r)
 
 
 static void
-ngx_http_finalize_connection(ngx_http_request_t *r)
+ngx_http_finalize_connection(ngx_http_request_t *r) //结束连接
 {
     ngx_http_core_loc_conf_t  *clcf;
 
@@ -2215,7 +2215,7 @@ ngx_http_finalize_connection(ngx_http_request_t *r)
          && r->keepalive
          && clcf->keepalive_timeout > 0)
     {
-        ngx_http_set_keepalive(r);
+        ngx_http_set_keepalive(r); //维护一个长连接
         return;
     }
 
@@ -2527,9 +2527,9 @@ ngx_http_set_keepalive(ngx_http_request_t *r)
 
     c->data = hc;
 
-    ngx_add_timer(rev, clcf->keepalive_timeout);
+    ngx_add_timer(rev, clcf->keepalive_timeout); //添加一个keepalive超时事件
 
-    if (ngx_handle_read_event(rev, 0) != NGX_OK) {
+    if (ngx_handle_read_event(rev, 0) != NGX_OK) { //再将该连接注册到kevent上
         ngx_http_close_connection(c);
         return;
     }
@@ -3069,7 +3069,7 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
 
     log->action = "logging request";
 
-    ngx_http_log_request(r);
+    ngx_http_log_request(r);  //完成request后写日志
 
     log->action = "closing request";
 
@@ -3097,7 +3097,7 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
 
     r->connection->destroyed = 1;
 
-    ngx_destroy_pool(r->pool);
+    ngx_destroy_pool(r->pool); //销毁request的内存池
 }
 
 

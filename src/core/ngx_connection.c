@@ -10,7 +10,7 @@
 #include <ngx_event.h>
 
 
-ngx_os_io_t  ngx_io;
+ngx_os_io_t  ngx_io;//TODO 初始化时已注册好了使用的发送接收函数？
 
 
 static void ngx_drain_connections(void);

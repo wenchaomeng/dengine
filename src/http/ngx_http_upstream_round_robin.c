@@ -27,14 +27,14 @@ static void ngx_http_upstream_empty_save_session(ngx_peer_connection_t *pc,
 
 ngx_int_t
 ngx_http_upstream_init_round_robin(ngx_conf_t *cf,
-    ngx_http_upstream_srv_conf_t *us)
+    ngx_http_upstream_srv_conf_t *us)                  //upstream round_robin算法初始化
 {
     ngx_url_t                      u;
     ngx_uint_t                     i, j, n, w;
     ngx_http_upstream_server_t    *server;
     ngx_http_upstream_rr_peers_t  *peers, *backup;
 
-    us->peer.init = ngx_http_upstream_init_round_robin_peer;
+    us->peer.init = ngx_http_upstream_init_round_robin_peer;//在初始化request时被调用
 
     if (us->servers) {
         server = us->servers->elts;

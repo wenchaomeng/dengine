@@ -172,7 +172,7 @@ typedef struct {
 
     ngx_hash_keys_arrays_t    *variables_keys;
 
-    ngx_array_t               *ports;
+    ngx_array_t               *ports;  //保存http配置下监听的所有端口
 
     ngx_uint_t                 try_files;       /* unsigned  try_files:1 */
 
@@ -326,9 +326,9 @@ struct ngx_http_core_loc_conf_s {
 #endif
 #endif
 
-    ngx_http_location_tree_node_t   *static_locations;
+    ngx_http_location_tree_node_t   *static_locations; //精确匹配
 #if (NGX_PCRE)
-    ngx_http_core_loc_conf_t       **regex_locations;
+    ngx_http_core_loc_conf_t       **regex_locations; //正则匹配
 #endif
 
     /* pointer to the modules' loc_conf */

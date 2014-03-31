@@ -383,7 +383,7 @@ ngx_conf_bitmask_t  ngx_http_upstream_ignore_headers_masks[] = {
 
 
 ngx_int_t
-ngx_http_upstream_create(ngx_http_request_t *r)
+ngx_http_upstream_create(ngx_http_request_t *r) //为ngx_http_upstream_t结构体分配空间，并进行一些初始化
 {
     ngx_http_upstream_t  *u;
 
@@ -431,7 +431,7 @@ ngx_http_upstream_init(ngx_http_request_t *r)
         ngx_del_timer(c->read);
     }
 
-    if (ngx_event_flags & NGX_USE_CLEAR_EVENT) {
+    if (ngx_event_flags & NGX_USE_CLEAR_EVENT) {//为什么边沿触发要挂载写事件?
 
         if (!c->write->active) {
             if (ngx_add_event(c->write, NGX_WRITE_EVENT, NGX_CLEAR_EVENT)
@@ -531,7 +531,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 
     } else {
 
-        u->state = ngx_array_push(r->upstream_states);
+        u->state = ngx_array_push(r->upstream_states); //upstream_states为啥要用数组存储
         if (u->state == NULL) {
             ngx_http_upstream_finalize_request(r, u,
                                                NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -551,7 +551,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
     cln->data = r;
     u->cleanup = &cln->handler;
 
-    if (u->resolved == NULL) {
+    if (u->resolved == NULL) { //TODO 是否需要地址解析，再哪设置的？
 
         uscf = u->conf->upstream;
 
@@ -559,7 +559,7 @@ ngx_http_upstream_init_request(ngx_http_request_t *r)
 
         if (u->resolved->sockaddr) {
 
-            if (ngx_http_upstream_create_round_robin_peer(r, u->resolved)
+            if (ngx_http_upstream_create_round_robin_peer(r, u->resolved) //创建upstream的对端的列表结构体，并设置round_robin的get和free等回调钩子
                 != NGX_OK)
             {
                 ngx_http_upstream_finalize_request(r, u,
@@ -1037,7 +1037,7 @@ ngx_http_upstream_check_broken_connection(ngx_http_request_t *r,
 
 #endif
 
-    n = recv(c->fd, buf, 1, MSG_PEEK);
+    n = recv(c->fd, buf, 1, MSG_PEEK); //从socket的buf中读出一个字节，确定连接是否建好
 
     err = ngx_socket_errno;
 
@@ -1156,8 +1156,8 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
     c->data = r;
 
-    c->write->handler = ngx_http_upstream_handler;
-    c->read->handler = ngx_http_upstream_handler;
+    c->write->handler = ngx_http_upstream_handler; //设置upstream写事件的处理handler，在 ev->handler(ev)时调用
+    c->read->handler = ngx_http_upstream_handler; //设置upstream读事件的处理handler，在 ev->handler(ev)时调用
 
     u->write_event_handler = ngx_http_upstream_send_request_handler;
     u->read_event_handler = ngx_http_upstream_process_header;
@@ -4711,7 +4711,7 @@ ngx_http_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
         init = uscfp[i]->peer.init_upstream ? uscfp[i]->peer.init_upstream:
-                                            ngx_http_upstream_init_round_robin;
+                                            ngx_http_upstream_init_round_robin; //设置upstream初始化钩子
 
         if (init(cf, uscfp[i]) != NGX_OK) {
             return NGX_CONF_ERROR;

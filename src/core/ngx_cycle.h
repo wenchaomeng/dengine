@@ -42,7 +42,7 @@ struct ngx_cycle_s {
     ngx_log_t                 new_log;
 
     ngx_connection_t        **files;
-    ngx_connection_t         *free_connections;
+    ngx_connection_t         *free_connections; //TODO connection数据结构复用?
     ngx_uint_t                free_connection_n;
 
     ngx_queue_t               reusable_connections_queue;

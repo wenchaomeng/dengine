@@ -90,7 +90,7 @@ ngx_slab_init(ngx_slab_pool_t *pool)
 
     pool->min_size = 1 << pool->min_shift;
 
-    p = (u_char *) pool + sizeof(ngx_slab_pool_t);
+    p = (u_char *) pool + sizeof(ngx_slab_pool_t); //取ngx_slab_pool_t后的首地址
     size = pool->end - p;
 
     ngx_slab_junk(p, size);
@@ -102,11 +102,11 @@ ngx_slab_init(ngx_slab_pool_t *pool)
         slots[i].slab = 0;
         slots[i].next = &slots[i];
         slots[i].prev = 0;
-    }
+    }// 初始化slots
 
     p += n * sizeof(ngx_slab_page_t);
 
-    pages = (ngx_uint_t) (size / (ngx_pagesize + sizeof(ngx_slab_page_t)));
+    pages = (ngx_uint_t) (size / (ngx_pagesize + sizeof(ngx_slab_page_t)));//初始化pages
 
     ngx_memzero(p, pages * sizeof(ngx_slab_page_t));
 

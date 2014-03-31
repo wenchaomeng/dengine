@@ -22,7 +22,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_event_t       *rev, *wev;
     ngx_connection_t  *c;
 
-    rc = pc->get(pc, pc->data);
+    rc = pc->get(pc, pc->data);//获取要建立连接的后端服务器信息，根据hash算法设置不同的回调
     if (rc != NGX_OK) {
         return rc;
     }
@@ -124,13 +124,13 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, pc->log, 0,
                    "connect to %V, fd:%d #%d", pc->name, s, c->number);
 
-    rc = connect(s, pc->sockaddr, pc->socklen);
+    rc = connect(s, pc->sockaddr, pc->socklen); //采用非阻塞的方式建立连接
 
     if (rc == -1) {
         err = ngx_socket_errno;
 
 
-        if (err != NGX_EINPROGRESS
+        if (err != NGX_EINPROGRESS //如果不是非阻塞建立连接走这个分支
 #if (NGX_WIN32)
             /* Winsock returns WSAEWOULDBLOCK (NGX_EAGAIN) */
             && err != NGX_EAGAIN
@@ -221,11 +221,11 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         event = NGX_LEVEL_EVENT;
     }
 
-    if (ngx_add_event(rev, NGX_READ_EVENT, event) != NGX_OK) {
+    if (ngx_add_event(rev, NGX_READ_EVENT, event) != NGX_OK) { //向kevent上添加一个读事件
         goto failed;
     }
 
-    if (rc == -1) {
+    if (rc == -1) {//如果是非阻塞连接，注册写事件
 
         /* NGX_EINPROGRESS */
 

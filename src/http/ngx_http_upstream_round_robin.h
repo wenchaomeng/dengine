@@ -40,7 +40,7 @@ typedef struct {
 #if (NGX_HTTP_SSL)
     ngx_ssl_session_t              *ssl_session;   /* local to a process */
 #endif
-} ngx_http_upstream_rr_peer_t;
+} ngx_http_upstream_rr_peer_t; //存储upstream一个server的配置的结构体
 
 
 typedef struct ngx_http_upstream_rr_peers_s  ngx_http_upstream_rr_peers_t;
@@ -59,10 +59,10 @@ struct ngx_http_upstream_rr_peers_s {
 
     ngx_str_t                      *name;
 
-    ngx_http_upstream_rr_peers_t   *next;
+    ngx_http_upstream_rr_peers_t   *next; //指向后备服务器的列表
 
-    ngx_http_upstream_rr_peer_t     peer[1];
-};
+    ngx_http_upstream_rr_peer_t     peer[1];//定义一个数组指针
+}; //存储一个upstream中得server列表的结构体
 
 
 typedef struct {

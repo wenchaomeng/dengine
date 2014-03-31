@@ -633,7 +633,7 @@ ngx_http_proxy_handler(ngx_http_request_t *r)
     ngx_http_proxy_ctx_t       *ctx;
     ngx_http_proxy_loc_conf_t  *plcf;
 
-    if (ngx_http_upstream_create(r) != NGX_OK) {
+    if (ngx_http_upstream_create(r) != NGX_OK) { //创建upstrean数据结构体
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 

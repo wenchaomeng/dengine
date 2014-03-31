@@ -12,7 +12,7 @@
 #if (NGX_HAVE_MAP_ANON)
 
 ngx_int_t
-ngx_shm_alloc(ngx_shm_t *shm)
+ngx_shm_alloc(ngx_shm_t *shm) //分配共享内存
 {
     shm->addr = (u_char *) mmap(NULL, shm->size,
                                 PROT_READ|PROT_WRITE,

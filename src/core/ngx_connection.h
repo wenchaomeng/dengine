@@ -144,7 +144,7 @@ struct ngx_connection_s {
 
     ngx_queue_t         queue;
 
-    ngx_atomic_uint_t   number;
+    ngx_atomic_uint_t   number; //TODO 连接使用计数？
 
     ngx_uint_t          requests;
 

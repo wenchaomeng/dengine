@@ -464,7 +464,7 @@ ngx_http_dyups_init(ngx_conf_t *cf)
     }
 
     uscfp = umcf->upstreams.elts;
-    for (i = 0; i < umcf->upstreams.nelts; i++) {
+    for (i = 0; i < umcf->upstreams.nelts; i++) {//读取配置文件中加载的upstream配置，将uptream名加入到dypp管理upstream的数组中
 
         duscf = ngx_array_push(&dmcf->dy_upstreams);
         if (duscf == NULL) {
@@ -1359,7 +1359,7 @@ ngx_dyups_add_server(ngx_http_dyups_srv_conf_t *duscf, ngx_array_t *arglist)
             max_fails = 1;
             fail_timeout = 10;
 
-            us = ngx_array_push(uscf->servers);
+            us = ngx_array_push(uscf->servers); // 向配置文件解析出来的upstream的数组中添加一个server
             if (us == NULL) {
                 return NGX_ERROR;
             }
@@ -1707,7 +1707,7 @@ ngx_dyups_delete_upstream(ngx_http_dyups_srv_conf_t *duscf)
                   "[dyups] delete upstream \"%V\"", &duscf->upstream->host);
 
     us = uscf->servers->elts;
-    for (i = 0; i < uscf->servers->nelts; i++) {
+    for (i = 0; i < uscf->servers->nelts; i++) { //将要删除的server标记为down
         us[i].down = 1;
 
 #if (NGX_HTTP_UPSTREAM_CHECK)

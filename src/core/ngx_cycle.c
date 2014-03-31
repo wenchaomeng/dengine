@@ -570,11 +570,11 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             break;
         }
 
-        if (ngx_shm_alloc(&shm_zone[i].shm) != NGX_OK) {
+        if (ngx_shm_alloc(&shm_zone[i].shm) != NGX_OK) { //分配各种共享内存
             goto failed;
         }
 
-        if (ngx_init_zone_pool(cycle, &shm_zone[i]) != NGX_OK) {
+        if (ngx_init_zone_pool(cycle, &shm_zone[i]) != NGX_OK) {//初始化各种共享内存
             goto failed;
         }
 
@@ -1348,7 +1348,7 @@ ngx_reopen_files(ngx_cycle_t *cycle, ngx_uid_t user)
 
 
 ngx_shm_zone_t *
-ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
+ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)//将要创建的共享内存加入cycle->shared_memory列表中，后面会统一创建
 {
     ngx_uint_t        i;
     ngx_shm_zone_t   *shm_zone;

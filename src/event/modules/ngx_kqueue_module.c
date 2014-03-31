@@ -289,7 +289,7 @@ ngx_kqueue_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     ev->disabled = 0;
     ev->oneshot = (flags & NGX_ONESHOT_EVENT) ? 1 : 0;
 
-    ngx_mutex_lock(list_mutex);
+    ngx_mutex_lock(list_mutex); //添加事件时需要加锁
 
 #if 0
 
@@ -431,7 +431,7 @@ ngx_kqueue_set_event(ngx_event_t *ev, ngx_int_t filter, ngx_uint_t flags)
         nchanges = 0;
     }
 
-    kev = &change_list[nchanges];
+    kev = &change_list[nchanges];//往change_list上注册事件
 
     kev->ident = c->fd;
     kev->filter = (short) filter;

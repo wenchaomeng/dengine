@@ -67,7 +67,7 @@ typedef struct {
     ngx_hash_t                       headers_in_hash;
     ngx_array_t                      upstreams;
                                              /* ngx_http_upstream_srv_conf_t */
-} ngx_http_upstream_main_conf_t;
+} ngx_http_upstream_main_conf_t;  //存储upstream配置的数组存放的结构体
 
 typedef struct ngx_http_upstream_srv_conf_s  ngx_http_upstream_srv_conf_t;
 
@@ -124,7 +124,7 @@ struct ngx_http_upstream_srv_conf_s {
     ngx_uint_t                       line;
     in_port_t                        port;
     in_port_t                        default_port;
-};
+};  //存储各个upstream的配置
 
 
 typedef struct {
