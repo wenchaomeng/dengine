@@ -42,9 +42,14 @@ if [ ! -f "Makefile" ]; then
 	make install
 fi
 
-mkdir -p /usr/local/nginx/conf/phoenix-slb/
+#mkdir -p /usr/local/nginx/conf/phoenix-slb/
 
+#cp ngx_dynamic_proxy_pass_module/rule.lua /usr/local/nginx/conf/phoenix-slb/rule.lua
+
+#cp nginx_lb_test.conf /usr/local/nginx/conf/
+#cp nginx_lb_test_cjson.conf /usr/local/nginx/conf/
+
+cp conf/* /usr/local/nginx/conf/
 cp ngx_dynamic_proxy_pass_module/rule.lua /usr/local/nginx/conf/phoenix-slb/rule.lua
 
-cp nginx_lb_test.conf /usr/local/nginx/conf/
-cp nginx_lb_test_cjson.conf /usr/local/nginx/conf/
+chmod a+wr /usr/local/nginx/conf/ -R
