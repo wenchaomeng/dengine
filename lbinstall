@@ -49,7 +49,7 @@ fi
 #cp nginx_lb_test.conf /usr/local/nginx/conf/
 #cp nginx_lb_test_cjson.conf /usr/local/nginx/conf/
 
-cp conf/* /usr/local/nginx/conf/
+cp -r conf/* /usr/local/nginx/conf/
 cp ngx_dynamic_proxy_pass_module/rule.lua /usr/local/nginx/conf/phoenix-slb/rule.lua
 
 chmod a+wr /usr/local/nginx/conf/ -R
