@@ -1,0 +1,3 @@
+[submodule "tengine"]
+	path = tengine
+	url = git@code.dianpingoa.com:wenchao.meng/tengine.git
