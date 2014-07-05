@@ -1,4 +1,13 @@
 #!/bin/bash
+
+git submodule init
+git submodule update
+
+if [ ! -f tengine/configure ]; then
+        echo 'check out submodule tengine failed!'
+        exit
+fi
+
 if [ ! -d "openssl-1.0.1h" ]; then
   # Control will enter here if $DIRECTORY doesn't exist.
   tar -xvf openssl-1.0.1h.tar.gz
@@ -40,7 +49,8 @@ ldconfig
 
 cd tengine
 if [ ! -f "Makefile" ]; then
-	./configure --with-http_upstream_check_module --add-module=../ngx_dynamic_proxy_pass_module --with-luajit-inc=/usr/local/include/luajit-2.0 --with-luajit-lib=/usr/local/lib/ --with-http_lua_module --add-module=../ngx_http_dyups_module --add-module=../nginx_upstream_hash/ --add-module=../echo-nginx-module/ --add-module=../headers-more-nginx-module-0.24 --with-openssl=openssl-1.0.1h
+#	./configure --with-http_upstream_check_module --add-module=../ngx_dynamic_proxy_pass_module --with-luajit-inc=/usr/local/include/luajit-2.0 --with-luajit-lib=/usr/local/lib/ --with-http_lua_module --add-module=../ngx_http_dyups_module --add-module=../nginx_upstream_hash/ --add-module=../echo-nginx-module/ --add-module=../headers-more-nginx-module-0.24 --with-openssl=openssl-1.0.1h
+	./configure --with-http_upstream_check_module --with-luajit-inc=/usr/local/include/luajit-2.0 --with-luajit-lib=/usr/local/lib/ --with-http_lua_module --add-module=../nginx_upstream_hash/ --add-module=../echo-nginx-module/ --add-module=../headers-more-nginx-module-0.24 --with-openssl=../openssl-1.0.1h
 
 	make
 
