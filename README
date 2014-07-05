@@ -2,14 +2,17 @@
 
 Installation
 ============
+	Step1:
+		edit file: /etc/hosts
+		add line: 192.168.7.7 code.dianpingoa.com
+		
 
-./lbinstall
-
-
+	Step2:
+		sudo ./lbinstall
 
 verification
 ===========
 
-./verification
+	sudo ./verification
 
 

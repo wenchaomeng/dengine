@@ -1,2 +1,6 @@
 Makefile
 objs/
+*.o
+*.a
+*.so
+openssl-1.0.1h/
