@@ -1,13 +1,17 @@
 #!/bin/bash
 
-git submodule init
-git submodule update
+#if no tengine, get it
+
+if [ ! -f tengine/configure ]; then
+	git submodule init
+	git submodule update
+fi
 
 if [ ! -f tengine/configure ]; then
         echo 'check out submodule tengine failed!'
         exit
 fi
-
+exit
 if [ ! -d "openssl-1.0.1h" ]; then
   # Control will enter here if $DIRECTORY doesn't exist.
   tar -xvf openssl-1.0.1h.tar.gz
