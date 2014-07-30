@@ -19,7 +19,7 @@ fi
 
 platform=`uname -o`
 
-if [ "$platform" == "GNU/Linux" ]; then
+if [ "$platform" = "GNU/Linux" ]; then
 	yum -y install pcre.x86_64 pcre-devel.x86_64
 fi
 
@@ -42,11 +42,11 @@ cd ..
 already=0
 while read line
 do
-	if [ "$line" == "/usr/local/lib" ]; then
+	if [ "$line" = "/usr/local/lib" ]; then
 		already=1
 	fi
 done < /etc/ld.so.conf
-if [ $already == 0 ]; then
+if [ $already = 0 ]; then
 	echo "/usr/local/lib" >> /etc/ld.so.conf
 fi
 ldconfig
