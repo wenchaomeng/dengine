@@ -1,7 +1,8 @@
-#include <ngx_config.h>
-#include <ngx_core.h>
 #include <ngx_http.h>
-#include "ngx_http_dyups_module.h"
+#include <ngx_http_dyups.h>
+#ifdef NGX_DYUPS_LUA
+#include <ngx_http_dyups_lua.h>
+#endif
 
 
 #define NGX_DYUPS_DELETING     1
@@ -16,49 +17,6 @@
     if (!ngx_exiting && !ngx_quit) ngx_add_timer(ev, (timeout))
 
 
-typedef struct {
-    ngx_uint_t                           count;
-    ngx_http_upstream_init_peer_pt       init;
-} ngx_http_dyups_upstream_srv_conf_t;
-
-
-typedef struct {
-    void                                *data;
-    ngx_http_dyups_upstream_srv_conf_t  *scf;
-    ngx_event_get_peer_pt                get;
-    ngx_event_free_peer_pt               free;
-} ngx_http_dyups_ctx_t;
-
-
-typedef struct ngx_dyups_status_s {
-    ngx_pid_t                            pid;
-    ngx_msec_t                           time;
-} ngx_dyups_status_t;
-
-
-typedef struct ngx_dyups_shctx_s {
-    ngx_queue_t                          msg_queue;
-    ngx_uint_t                           version;
-    ngx_dyups_status_t                  *status;
-} ngx_dyups_shctx_t;
-
-
-typedef struct ngx_dyups_global_ctx_s {
-    ngx_event_t                          msg_timer;
-    ngx_slab_pool_t                     *shpool;
-    ngx_dyups_shctx_t                   *sh;
-} ngx_dyups_global_ctx_t;
-
-
-typedef struct ngx_dyups_msg_s {
-    ngx_queue_t                          queue;
-    ngx_str_t                            path;
-    ngx_str_t                            content;
-    ngx_int_t                            count;
-    ngx_uint_t                           flag;
-    ngx_pid_t                           *pid;
-} ngx_dyups_msg_t;
-
 
 static ngx_int_t ngx_http_dyups_init(ngx_conf_t *cf);
 static void *ngx_http_dyups_create_main_conf(ngx_conf_t *cf);
@@ -70,31 +28,25 @@ static ngx_int_t ngx_http_dyups_interface_read_body(ngx_http_request_t *r);
 static ngx_buf_t *ngx_http_dyups_read_body(ngx_http_request_t *r);
 static ngx_buf_t *ngx_http_dyups_read_body_from_file(ngx_http_request_t *r);
 static void ngx_http_dyups_body_handler(ngx_http_request_t *r);
-static ngx_array_t *ngx_dyups_parse_content(ngx_pool_t *pool, ngx_buf_t *buf);
-static ngx_int_t ngx_dyups_conf_read_token(ngx_pool_t *pool, ngx_buf_t *body,
-    ngx_array_t *args);
 static void ngx_http_dyups_send_response(ngx_http_request_t *r,
     ngx_int_t status, ngx_str_t *content);
 static ngx_int_t ngx_http_dyups_do_get(ngx_http_request_t *r,
     ngx_array_t *resource);
 static ngx_int_t ngx_http_dyups_do_delete(ngx_http_request_t *r,
     ngx_array_t *resource);
-static ngx_int_t ngx_http_dyups_do_post(ngx_http_request_t *r,
-    ngx_array_t *resource, ngx_array_t *arglist, ngx_str_t *rv);
 static ngx_http_dyups_srv_conf_t *ngx_dyups_find_upstream(ngx_str_t *name,
     ngx_int_t *idx);
 static ngx_int_t ngx_dyups_add_server(ngx_http_dyups_srv_conf_t *duscf,
-    ngx_array_t *arglist);
+    ngx_buf_t *buf);
 static ngx_int_t ngx_dyups_init_upstream(ngx_http_dyups_srv_conf_t *duscf,
     ngx_str_t *name, ngx_uint_t index);
-static void ngx_dyups_delete_upstream(ngx_http_dyups_srv_conf_t *duscf);
-static ngx_int_t ngx_http_dyups_check_commands(ngx_array_t *arglist);
+static void ngx_dyups_mark_upstream_delete(ngx_http_dyups_srv_conf_t *duscf);
 static ngx_int_t ngx_http_dyups_init_peer(ngx_http_request_t *r,
     ngx_http_upstream_srv_conf_t *us);
-static void *ngx_http_dyups_create_srv_conf(ngx_conf_t *cf);
 static ngx_int_t ngx_http_dyups_get_peer(ngx_peer_connection_t *pc, void *data);
 static void ngx_http_dyups_free_peer(ngx_peer_connection_t *pc, void *data,
     ngx_uint_t state);
+static void *ngx_http_dyups_create_srv_conf(ngx_conf_t *cf);
 static ngx_buf_t *ngx_http_dyups_show_list(ngx_http_request_t *r);
 static ngx_buf_t *ngx_http_dyups_show_detail(ngx_http_request_t *r);
 static ngx_buf_t *ngx_http_dyups_show_upstream(ngx_http_request_t *r,
@@ -108,25 +60,25 @@ static ngx_int_t ngx_http_dyups_init_process(ngx_cycle_t *cycle);
 static void ngx_http_dyups_exit_process(ngx_cycle_t *cycle);
 static void ngx_http_dyups_read_msg(ngx_event_t *ev);
 static void ngx_http_dyups_read_msg_locked(ngx_event_t *ev);
-static ngx_int_t ngx_http_dyups_send_msg(ngx_str_t *path, ngx_buf_t *body,
+static ngx_int_t ngx_http_dyups_send_msg(ngx_str_t *name, ngx_buf_t *body,
     ngx_uint_t flag);
 static void ngx_dyups_destroy_msg(ngx_slab_pool_t *shpool,
     ngx_dyups_msg_t *msg);
-static ngx_int_t ngx_dyups_sync_cmd(ngx_pool_t *pool, ngx_str_t *path,
+static ngx_int_t ngx_dyups_sync_cmd(ngx_pool_t *pool, ngx_str_t *name,
     ngx_str_t *content, ngx_uint_t flag);
 static ngx_array_t *ngx_dyups_parse_path(ngx_pool_t *pool, ngx_str_t *path);
 static ngx_int_t ngx_dyups_do_delete(ngx_str_t *name, ngx_str_t *rv);
+static ngx_int_t ngx_dyups_do_update(ngx_str_t *name, ngx_buf_t *buf,
+    ngx_str_t *rv);
+static ngx_int_t ngx_dyups_sandbox_update(ngx_buf_t *buf, ngx_str_t *rv);
 static ngx_int_t ngx_dyups_restore_upstreams(ngx_cycle_t *cycle,
     ngx_str_t *path);
-static ngx_array_t *ngx_dyups_copy_args(ngx_pool_t *pool, ngx_array_t *arglist);
-static ngx_buf_t * ngx_dyups_read_upstream_conf(ngx_cycle_t *cycle,
+static ngx_buf_t *ngx_dyups_read_upstream_conf(ngx_cycle_t *cycle,
     ngx_str_t *path);
 static ngx_int_t ngx_dyups_do_restore_upstream(ngx_buf_t *ups,
     ngx_buf_t *block);
 static void ngx_dyups_purge_msg(ngx_pid_t opid, ngx_pid_t npid);
 static void ngx_http_dyups_clean_request(void *data);
-static char *ngx_http_dyups_resolver(ngx_conf_t *cf, ngx_command_t *cmd,
-    void *conf);
 
 
 static ngx_command_t  ngx_http_dyups_commands[] = {
@@ -136,20 +88,6 @@ static ngx_command_t  ngx_http_dyups_commands[] = {
       ngx_http_dyups_interface,
       0,
       0,
-      NULL },
-
-    { ngx_string("dyups_resolver"),
-      NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
-      ngx_http_dyups_resolver,
-      NGX_HTTP_MAIN_CONF_OFFSET,
-      0,
-      NULL },
-
-    { ngx_string("dyups_resolver_timeout"),
-      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
-      ngx_conf_set_msec_slot,
-      NGX_HTTP_LOC_CONF_OFFSET,
-      offsetof(ngx_http_dyups_main_conf_t, resolver_timeout),
       NULL },
 
     { ngx_string("dyups_read_msg_timeout"),
@@ -214,19 +152,7 @@ ngx_module_t  ngx_http_dyups_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
-static ngx_uint_t argument_number[] = {
-    NGX_CONF_NOARGS,
-    NGX_CONF_TAKE1,
-    NGX_CONF_TAKE2,
-    NGX_CONF_TAKE3,
-    NGX_CONF_TAKE4,
-    NGX_CONF_TAKE5,
-    NGX_CONF_TAKE6,
-    NGX_CONF_TAKE7
-};
-
-
+ngx_flag_t ngx_http_dyups_api_enable = 0;
 static ngx_http_upstream_srv_conf_t ngx_http_dyups_deleted_upstream;
 static ngx_uint_t ngx_http_dyups_shm_generation = 0;
 static ngx_dyups_global_ctx_t ngx_dyups_global_ctx;
@@ -281,36 +207,12 @@ ngx_http_dyups_create_main_conf(ngx_conf_t *cf)
     dmcf->shm_size = NGX_CONF_UNSET_UINT;
     dmcf->read_msg_timeout = NGX_CONF_UNSET_MSEC;
     dmcf->trylock = NGX_CONF_UNSET;
-    dmcf->resolver_timeout = NGX_CONF_UNSET_MSEC;
 
     /*
       dmcf->conf_path = nil
-      dmcf->resolver = nil
      */
 
     return dmcf;
-}
-
-
-static char *
-ngx_http_dyups_resolver(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
-{
-    ngx_http_dyups_main_conf_t  *dmcf = conf;
-
-    ngx_str_t  *value;
-
-    if (dmcf->resolver) {
-        return "is duplicate";
-    }
-
-    value = cf->args->elts;
-
-    dmcf->resolver = ngx_resolver_create(cf, &value[1], cf->args->nelts - 1);
-    if (dmcf->resolver == NULL) {
-        return NGX_CONF_ERROR;
-    }
-
-    return NGX_CONF_OK;
 }
 
 
@@ -319,22 +221,18 @@ ngx_http_dyups_init_main_conf(ngx_conf_t *cf, void *conf)
 {
     ngx_http_dyups_main_conf_t  *dmcf = conf;
 
-    dmcf->enable = dmcf->enable == NGX_CONF_UNSET ? 0 : 1;
-    dmcf->trylock = dmcf->trylock == NGX_CONF_UNSET ? 0 : 1;
+    if (dmcf->enable == NGX_CONF_UNSET) {
+        dmcf->enable = 0;
+    }
+
+    dmcf->enable = dmcf->enable || ngx_http_dyups_api_enable;
+
+    if (dmcf->trylock == NGX_CONF_UNSET) {
+        dmcf->trylock = 0;
+    }
 
     if (!dmcf->enable) {
         return NGX_CONF_OK;
-    }
-
-    if (dmcf->resolver == NULL) {
-        dmcf->resolver = ngx_resolver_create(cf, NULL, 0);
-        if (dmcf->resolver == NULL) {
-            return NGX_CONF_ERROR;
-        }
-    }
-
-    if (dmcf->resolver_timeout == NGX_CONF_UNSET_MSEC) {
-        dmcf->read_msg_timeout = 30000;
     }
 
     if (dmcf->read_msg_timeout == NGX_CONF_UNSET_MSEC) {
@@ -464,7 +362,7 @@ ngx_http_dyups_init(ngx_conf_t *cf)
     }
 
     uscfp = umcf->upstreams.elts;
-    for (i = 0; i < umcf->upstreams.nelts; i++) {//读取配置文件中加载的upstream配置，将uptream名加入到dypp管理upstream的数组中
+    for (i = 0; i < umcf->upstreams.nelts; i++) {
 
         duscf = ngx_array_push(&dmcf->dy_upstreams);
         if (duscf == NULL) {
@@ -473,11 +371,7 @@ ngx_http_dyups_init(ngx_conf_t *cf)
 
         ngx_memzero(duscf, sizeof(ngx_http_dyups_srv_conf_t));
 
-        duscf->pool = ngx_create_pool(512, cf->log);
-        if (duscf->pool == NULL) {
-            return NGX_ERROR;
-        }
-
+        duscf->pool = NULL;
         duscf->upstream = uscfp[i];
         duscf->dynamic = (uscfp[i]->port == 0
                           && uscfp[i]->srv_conf && uscfp[i]->servers
@@ -487,11 +381,11 @@ ngx_http_dyups_init(ngx_conf_t *cf)
 
         if (duscf->dynamic) {
             dscf = duscf->upstream->srv_conf[ngx_http_dyups_module.ctx_index];
-            duscf->count = &dscf->count;
+            duscf->ref = &dscf->ref;
         }
     }
 
-    /* alloc a dumy upstream */
+    /* alloc a dummy upstream */
 
     ngx_memzero(&ngx_http_dyups_deleted_upstream,
                 sizeof(ngx_http_upstream_srv_conf_t));
@@ -528,7 +422,11 @@ ngx_http_dyups_init(ngx_conf_t *cf)
                 "_dyups_upstream_down_host_");
     ngx_http_dyups_deleted_upstream.file_name = (u_char *) "dyups_upstream";
 
+#ifdef NGX_DYUPS_LUA
+    return ngx_http_dyups_lua_preload(cf);
+#else
     return NGX_OK;
+#endif
 }
 
 
@@ -701,15 +599,10 @@ ngx_http_dyups_exit_process(ngx_cycle_t *cycle)
 static ngx_int_t
 ngx_http_dyups_interface_handler(ngx_http_request_t *r)
 {
-    ngx_int_t                    rc;
-    ngx_array_t                 *res;
-    ngx_event_t                 *timer;
-    ngx_slab_pool_t             *shpool;
-    ngx_http_dyups_main_conf_t  *dmcf;
+    ngx_array_t  *res;
+    ngx_event_t  *timer;
 
-    dmcf = ngx_http_get_module_main_conf(r, ngx_http_dyups_module);
     timer = &ngx_dyups_global_ctx.msg_timer;
-    shpool = ngx_dyups_global_ctx.shpool;
 
     res = ngx_dyups_parse_path(r->pool, &r->uri);
     if (res == NULL) {
@@ -722,28 +615,57 @@ ngx_http_dyups_interface_handler(ngx_http_request_t *r)
     }
 
     if (r->method == NGX_HTTP_DELETE) {
-
-        if (!dmcf->trylock) {
-
-            ngx_shmtx_lock(&shpool->mutex);
-
-        } else {
-
-            if (!ngx_shmtx_trylock(&shpool->mutex)) {
-                return NGX_HTTP_CONFLICT;
-            }
-
-        }
-
-        ngx_http_dyups_read_msg_locked(timer);
-        rc = ngx_http_dyups_do_delete(r, res);
-
-        ngx_shmtx_unlock(&shpool->mutex);
-
-        return rc;
+        return ngx_http_dyups_do_delete(r, res);
     }
 
     return ngx_http_dyups_interface_read_body(r);
+}
+
+
+ngx_int_t
+ngx_dyups_delete_upstream(ngx_str_t *name, ngx_str_t *rv)
+{
+    ngx_int_t                    status, rc;
+    ngx_event_t                 *timer;
+    ngx_slab_pool_t             *shpool;
+    ngx_http_dyups_main_conf_t  *dmcf;
+
+    dmcf = ngx_http_cycle_get_module_main_conf(ngx_cycle,
+                                               ngx_http_dyups_module);
+    timer = &ngx_dyups_global_ctx.msg_timer;
+    shpool = ngx_dyups_global_ctx.shpool;
+
+    if (!dmcf->trylock) {
+
+        ngx_shmtx_lock(&shpool->mutex);
+
+    } else {
+
+        if (!ngx_shmtx_trylock(&shpool->mutex)) {
+            return NGX_HTTP_CONFLICT;
+        }
+
+    }
+
+    ngx_http_dyups_read_msg_locked(timer);
+
+    status = ngx_dyups_do_delete(name, rv);
+    if (status != NGX_HTTP_OK) {
+        goto finish;
+    }
+
+    rc = ngx_http_dyups_send_msg(name, NULL, NGX_DYUPS_DELETE);
+    if (rc != NGX_OK) {
+        ngx_str_set(rv, "alert: delte success but not sync to other process");
+        ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0, "[dyups] %V", &rv);
+        status = NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
+ finish:
+
+    ngx_shmtx_unlock(&shpool->mutex);
+
+    return status;
 }
 
 
@@ -821,6 +743,8 @@ finish:
 
     if (status != NGX_HTTP_OK) {
         r->headers_out.content_length_n = 0;
+    } else {
+        r->headers_out.content_length_n = ngx_buf_size(buf);
     }
 
     rc = ngx_http_send_header(r);
@@ -1003,7 +927,7 @@ ngx_dyups_do_delete(ngx_str_t *name, ngx_str_t *rv)
         return NGX_HTTP_NOT_FOUND;
     }
 
-    ngx_dyups_delete_upstream(duscf);
+    ngx_dyups_mark_upstream_delete(duscf);
 
     ngx_str_set(rv, "success");
 
@@ -1014,10 +938,10 @@ ngx_dyups_do_delete(ngx_str_t *name, ngx_str_t *rv)
 static ngx_int_t
 ngx_http_dyups_do_delete(ngx_http_request_t *r, ngx_array_t *resource)
 {
-    ngx_str_t                  *value, name, rv;
-    ngx_int_t                   status, rc;
-    ngx_buf_t                  *b;
-    ngx_chain_t                 out;
+    ngx_str_t   *value, name, rv;
+    ngx_int_t    status, rc;
+    ngx_buf_t   *b;
+    ngx_chain_t  out;
 
     rc = ngx_http_discard_request_body(r);
     if (rc != NGX_OK) {
@@ -1032,8 +956,8 @@ ngx_http_dyups_do_delete(ngx_http_request_t *r, ngx_array_t *resource)
 
     value = resource->elts;
 
-    if (value[0].len == 8
-        && ngx_strncasecmp(value[0].data, (u_char *) "upstream", 8) != 0)
+    if (value[0].len != 8
+        || ngx_strncasecmp(value[0].data, (u_char *) "upstream", 8) != 0)
     {
         ngx_str_set(&rv, "not support this api");
         status = NGX_HTTP_NOT_ALLOWED;
@@ -1042,21 +966,7 @@ ngx_http_dyups_do_delete(ngx_http_request_t *r, ngx_array_t *resource)
 
     name = value[1];
 
-    status = ngx_dyups_do_delete(&name, &rv);
-    if (status != NGX_HTTP_OK) {
-        goto finish;
-    }
-
-    rc = ngx_http_dyups_send_msg(&r->uri, NULL, NGX_DYUPS_DELETE);
-    if (rc != NGX_OK) {
-        ngx_str_set(&rv, "alert: delte success but not sync to other process");
-        ngx_log_error(NGX_LOG_ALERT, r->connection->log, 0,
-                      "[dyups] %V", &rv);
-        status = NGX_HTTP_INTERNAL_SERVER_ERROR;
-        goto finish;
-    }
-
-    status = NGX_HTTP_OK;
+    status = ngx_dyups_delete_upstream(&name, &rv);
 
 finish:
 
@@ -1106,17 +1016,10 @@ ngx_http_dyups_interface_read_body(ngx_http_request_t *r)
 static void
 ngx_http_dyups_body_handler(ngx_http_request_t *r)
 {
-    ngx_str_t                    rv;
+    ngx_str_t                   *value, rv, name;
     ngx_int_t                    status;
     ngx_buf_t                   *body;
-    ngx_event_t                 *timer;
-    ngx_array_t                 *arglist, *res;
-    ngx_slab_pool_t             *shpool;
-    ngx_http_dyups_main_conf_t  *dmcf;
-
-    dmcf = ngx_http_get_module_main_conf(r, ngx_http_dyups_module);
-    timer = &ngx_dyups_global_ctx.msg_timer;
-    shpool = ngx_dyups_global_ctx.shpool;
+    ngx_array_t                 *res;
 
     if (r->method != NGX_HTTP_POST) {
         status = NGX_HTTP_NOT_ALLOWED;
@@ -1154,13 +1057,52 @@ ngx_http_dyups_body_handler(ngx_http_request_t *r)
         goto finish;
     }
 
-    arglist = ngx_dyups_parse_content(r->pool, body);
-    if (arglist == NULL) {
-        status = NGX_HTTP_BAD_REQUEST;
-        ngx_str_set(&rv, "parse body error\n");
+    if (res->nelts != 2) {
+        ngx_str_set(&rv, "not support this interface");
+        status = NGX_HTTP_NOT_FOUND;
         goto finish;
     }
 
+    /*
+      url: /upstream
+      body: server ip:port weight
+    */
+
+    value = res->elts;
+
+    if (value[0].len != 8
+        || ngx_strncasecmp(value[0].data, (u_char *) "upstream", 8) != 0)
+    {
+        ngx_str_set(&rv, "not support this api");
+        status = NGX_HTTP_NOT_FOUND;
+        goto finish;
+    }
+
+    name = value[1];
+
+    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
+                  "[dyups] post upstream name: %V", &name);
+
+    status = ngx_dyups_update_upstream(&name, body, &rv);
+
+finish:
+
+    ngx_http_dyups_send_response(r, status, &rv);
+}
+
+
+ngx_int_t
+ngx_dyups_update_upstream(ngx_str_t *name, ngx_buf_t *buf, ngx_str_t *rv)
+{
+    ngx_int_t                    status;
+    ngx_event_t                 *timer;
+    ngx_slab_pool_t             *shpool;
+    ngx_http_dyups_main_conf_t  *dmcf;
+
+    dmcf = ngx_http_cycle_get_module_main_conf(ngx_cycle,
+                                               ngx_http_dyups_module);
+    timer = &ngx_dyups_global_ctx.msg_timer;
+    shpool = ngx_dyups_global_ctx.shpool;
 
     if (!dmcf->trylock) {
 
@@ -1170,34 +1112,38 @@ ngx_http_dyups_body_handler(ngx_http_request_t *r)
 
         if (!ngx_shmtx_trylock(&shpool->mutex)) {
             status = NGX_HTTP_CONFLICT;
-            ngx_str_set(&rv, "wait and try again\n");
+            ngx_str_set(rv, "wait and try again\n");
             goto finish;
         }
     }
 
     ngx_http_dyups_read_msg_locked(timer);
 
-    status = ngx_http_dyups_do_post(r, res, arglist, &rv);
+    status = ngx_dyups_sandbox_update(buf, rv);
+    if (status != NGX_HTTP_OK) {
+        goto finish;
+    }
 
+    status = ngx_dyups_do_update(name, buf, rv);
     if (status == NGX_HTTP_OK) {
 
-        if (ngx_http_dyups_send_msg(&r->uri, body, NGX_DYUPS_ADD)) {
-            ngx_str_set(&rv, "alert: update success "
+        if (ngx_http_dyups_send_msg(name, buf, NGX_DYUPS_ADD)) {
+            ngx_str_set(rv, "alert: update success "
                         "but not sync to other process");
             status = NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
     }
 
+ finish:
+
     ngx_shmtx_unlock(&shpool->mutex);
 
-finish:
-
-    ngx_http_dyups_send_response(r, status, &rv);
+    return status;
 }
 
 
 static ngx_int_t
-ngx_dyups_do_update(ngx_str_t *name, ngx_array_t *arglist, ngx_str_t *rv)
+ngx_dyups_do_update(ngx_str_t *name, ngx_buf_t *buf, ngx_str_t *rv)
 {
     ngx_int_t                       rc, idx;
     ngx_http_dyups_srv_conf_t      *duscf;
@@ -1218,7 +1164,7 @@ ngx_dyups_do_update(ngx_str_t *name, ngx_array_t *arglist, ngx_str_t *rv)
         if (!duscf->deleted) {
             ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0,
                           "[dyups] upstream delete first");
-            ngx_dyups_delete_upstream(duscf);
+            ngx_dyups_mark_upstream_delete(duscf);
 
             duscf = ngx_dyups_find_upstream(name, &idx);
 
@@ -1253,20 +1199,14 @@ ngx_dyups_do_update(ngx_str_t *name, ngx_array_t *arglist, ngx_str_t *rv)
     rc = ngx_dyups_init_upstream(duscf, name, idx);
 
     if (rc != NGX_OK) {
-        ngx_str_set(rv, "failed");
-        return NGX_HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    arglist = ngx_dyups_copy_args(duscf->pool, arglist);
-    if (arglist == NULL) {
-        ngx_str_set(rv, "out of memory");
+        ngx_str_set(rv, "init upstream failed");
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
     /* init upstream */
-    rc = ngx_dyups_add_server(duscf, arglist);
+    rc = ngx_dyups_add_server(duscf, buf);
     if (rc != NGX_OK) {
-        ngx_str_set(rv, "failed");
+        ngx_str_set(rv, "add server failed");
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -1276,65 +1216,88 @@ ngx_dyups_do_update(ngx_str_t *name, ngx_array_t *arglist, ngx_str_t *rv)
 }
 
 
-/*
-  url: /upstream
-  body: server ip:port weight
- */
 static ngx_int_t
-ngx_http_dyups_do_post(ngx_http_request_t *r, ngx_array_t *resource,
-    ngx_array_t *arglist, ngx_str_t *rv)
+ngx_dyups_sandbox_update(ngx_buf_t *buf, ngx_str_t *rv)
 {
-    ngx_int_t                       rc;
-    ngx_str_t                      *value, name;
+    ngx_int_t  rc;
+    ngx_str_t  dumy;
 
-    if (resource->nelts != 2) {
-        ngx_str_set(rv, "not support this interface");
-        return NGX_HTTP_NOT_FOUND;
+    ngx_str_t  sandbox = ngx_string("_dyups_upstream_sandbox_");
+
+    rc = ngx_dyups_do_update(&sandbox, buf, rv);
+
+    (void) ngx_dyups_do_delete(&sandbox, &dumy);
+
+    return rc;
+}
+
+
+static char *
+ngx_dyups_parse_upstream_name_handler(ngx_conf_t *cf, ngx_command_t *dummy,
+    void *conf)
+{
+    ngx_str_t   *name = conf;
+    ngx_str_t   *value;
+
+    if (cf->args->nelts != 2) {
+        return NGX_CONF_ERROR;
     }
 
-    value = resource->elts;
+    value = cf->args->elts;
 
-    if (value[0].len == 8
-        && ngx_strncasecmp(value[0].data, (u_char *) "upstream", 8) != 0)
-    {
-        ngx_str_set(rv, "not support this api");
-        return NGX_HTTP_NOT_FOUND;
+    if (value[0].len != 8 || ngx_strncmp(value[0].data, "upstream", 8) != 0) {
+        return NGX_CONF_ERROR;
     }
 
-    name = value[1];
+    *name = value[1];
 
-    ngx_log_error(NGX_LOG_INFO, r->connection->log, 0,
-                   "[dyups] post upstream name: %V", &name);
+    return NGX_CONF_OK;
+}
 
-    rc = ngx_http_dyups_check_commands(arglist);
-    if (rc != NGX_OK) {
-        ngx_str_set(rv, "commands error");
-        return NGX_HTTP_NOT_ALLOWED;
-    }
 
-    rc = ngx_dyups_do_update(&name, arglist, rv);
-    if (rc != NGX_HTTP_OK) {
-        return rc;
-    }
+static char *
+ngx_dyups_parse_upstream_name(ngx_conf_t *cf, ngx_buf_t *buf, ngx_str_t *name)
+{
+    ngx_conf_file_t     conf_file;
+    ngx_buf_t           b;
 
-    return NGX_HTTP_OK;
+    b = *buf;   /* avoid modifying @buf */
+
+    ngx_memzero(&conf_file, sizeof(ngx_conf_file_t));
+    conf_file.file.fd = NGX_INVALID_FILE;
+    conf_file.buffer = &b;
+
+    cf->conf_file = &conf_file;
+    cf->handler = ngx_dyups_parse_upstream_name_handler;
+    cf->handler_conf = (void *) name;   /* return value */
+
+    return ngx_conf_parse(cf, NULL);
+}
+
+
+static char *
+ngx_dyups_parse_upstream(ngx_conf_t *cf, ngx_buf_t *buf)
+{
+    ngx_conf_file_t     conf_file;
+    ngx_buf_t           b;
+
+    b = *buf;   /* avoid modifying @buf */
+
+    ngx_memzero(&conf_file, sizeof(ngx_conf_file_t));
+    conf_file.file.fd = NGX_INVALID_FILE;
+    conf_file.buffer = &b;
+
+    cf->conf_file = &conf_file;
+
+    return ngx_conf_parse(cf, NULL);
 }
 
 
 static ngx_int_t
-ngx_dyups_add_server(ngx_http_dyups_srv_conf_t *duscf, ngx_array_t *arglist)
+ngx_dyups_add_server(ngx_http_dyups_srv_conf_t *duscf, ngx_buf_t *buf)
 {
-    time_t                               fail_timeout;
-    unsigned                             backup;
-    ngx_int_t                            weight, max_fails;
-    ngx_url_t                            u;
-    ngx_str_t                           *value, s;
     ngx_conf_t                           cf;
-    ngx_uint_t                           i, j;
-    ngx_array_t                         *line;
-    ngx_command_t                       *cmd;
     ngx_http_upstream_init_pt            init;
-    ngx_http_upstream_server_t          *us;
     ngx_http_upstream_srv_conf_t        *uscf;
     ngx_http_dyups_upstream_srv_conf_t  *dscf;
 
@@ -1348,152 +1311,20 @@ ngx_dyups_add_server(ngx_http_dyups_srv_conf_t *duscf, ngx_array_t *arglist)
         }
     }
 
-    line = arglist->elts;
-    for (i = 0; i < arglist->nelts; i++) {
-        value = line[i].elts;
+    ngx_memzero(&cf, sizeof(ngx_conf_t));
+    cf.name = "dyups_init_module_conf";
+    cf.pool = duscf->pool;
+    cf.module_type = NGX_HTTP_MODULE;
+    cf.cmd_type = NGX_HTTP_UPS_CONF;
+    cf.log = ngx_cycle->log;
+    cf.ctx = duscf->ctx;
+    cf.args = ngx_array_create(duscf->pool, 10, sizeof(ngx_str_t));
+    if (cf.args == NULL) {
+        return NGX_ERROR;
+    }
 
-        if (ngx_strncasecmp(value[0].data, (u_char *) "server", 6) == 0) {
-
-            backup = 0;
-            weight = 1;
-            max_fails = 1;
-            fail_timeout = 10;
-
-            us = ngx_array_push(uscf->servers); // 向配置文件解析出来的upstream的数组中添加一个server
-            if (us == NULL) {
-                return NGX_ERROR;
-            }
-
-            ngx_memzero(us, sizeof(ngx_http_upstream_server_t));
-            ngx_memzero(&u, sizeof(ngx_url_t));
-
-            u.url = value[1];
-            u.default_port = 80;
-
-            if (ngx_parse_url(duscf->pool, &u) != NGX_OK) {
-                if (u.err) {
-                    ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0,
-                                  "[dyups] %s in upstream \"%V\"",
-                                  u.err, &u.url);
-                }
-
-                return NGX_ERROR;
-            }
-
-
-            for (j = 2; j < line[i].nelts; j++) {
-
-                if (ngx_strncmp(value[j].data, "weight=", 7) == 0) {
-
-                    weight = ngx_atoi(&value[j].data[7], value[j].len - 7);
-
-                    if (weight == NGX_ERROR || weight == 0) {
-                        weight = 1;
-                    }
-
-                    continue;
-                }
-
-                if (ngx_strncmp(value[j].data, "max_fails=", 10) == 0) {
-
-                    max_fails = ngx_atoi(&value[j].data[10], value[j].len - 10);
-                    if (max_fails == NGX_ERROR) {
-                        max_fails = 1;
-                    }
-
-                    continue;
-                }
-
-                if (ngx_strncmp(value[j].data, "fail_timeout=", 13) == 0) {
-
-                    s.len = value[j].len - 13;
-                    s.data = &value[j].data[13];
-
-                    fail_timeout = ngx_parse_time(&s, 1);
-
-                    if (fail_timeout == (time_t) NGX_ERROR) {
-                        fail_timeout = 10;
-                    }
-
-                    continue;
-                }
-
-                if (ngx_strncmp(value[j].data, "backup", 6) == 0) {
-                    backup = 1;
-                    continue;
-                }
-            }
-
-            us->addrs = u.addrs;
-            us->naddrs = u.naddrs;
-            us->weight = weight;
-            us->max_fails = max_fails;
-            us->fail_timeout = fail_timeout;
-            us->backup = backup;
-
-            us->addrs->name.data = ngx_pstrdup(duscf->pool, &u.addrs->name);
-            us->addrs->name.len = u.addrs->name.len;
-
-        } else {
-
-            ngx_memzero(&cf, sizeof(ngx_conf_t));
-            cf.name = "dyups_init_module_conf";
-            cf.pool = duscf->pool;
-            cf.module_type = NGX_HTTP_MODULE;
-            cf.cmd_type = NGX_HTTP_UPS_CONF;
-            cf.log = ngx_cycle->log;
-            cf.ctx = duscf->ctx;
-            cf.args = &line[i];
-
-            for (j = 0; j < ngx_max_module; j++) {
-                if (ngx_modules[j]->type != NGX_HTTP_MODULE) {
-                    continue;
-                }
-
-                if (ngx_modules[j]->ctx_index
-                    == ngx_http_upstream_module.ctx_index)
-                {
-                    continue;
-                }
-
-                cmd = ngx_modules[j]->commands;
-                if (cmd == NULL) {
-                    continue;
-                }
-
-                for ( /* void */ ; cmd->name.len; cmd++) {
-                    if (!(cmd->type & NGX_HTTP_UPS_CONF)) {
-                        continue;
-                    }
-
-                    if (cmd->set == NULL) {
-                        continue;
-                    }
-
-                    if (cmd->name.len != value[0].len
-                        || ngx_strncasecmp(cmd->name.data, value[0].data,
-                                           value[0].len)
-                        != 0)
-                    {
-                        continue;
-                    }
-
-                    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                                   "[dyups] set upstream \"%V\"",
-                                   &cmd->name);
-
-                    if (cmd->set(&cf, cmd,
-                            duscf->ctx->srv_conf[ngx_modules[j]->ctx_index])
-                        != NGX_CONF_OK)
-                    {
-                        ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0,
-                                      "[dyups] set upstream \"%V\" error!",
-                                      &cmd->name);
-                        return NGX_ERROR;
-                    }
-                }
-            }
-        }
+    if (ngx_dyups_parse_upstream(&cf, buf) != NGX_CONF_OK) {
+        return NGX_ERROR;
     }
 
     ngx_memzero(&cf, sizeof(ngx_conf_t));
@@ -1547,18 +1378,21 @@ ngx_dyups_find_upstream(ngx_str_t *name, ngx_int_t *idx)
         if (duscf->deleted == NGX_DYUPS_DELETING) {
 
             ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0,
-                          "[dyups] find upstream idx: %ui %ui"
-                          " requests in %V deleting",
-                          i, *(duscf->count), &duscf->upstream->host);
+                          "[dyups] find upstream idx: %ui ref: %ui "
+                          "on %V deleting",
+                          i, *(duscf->ref), &duscf->upstream->host);
 
-            if (*(duscf->count) == 0) {
+            if (*(duscf->ref) == 0) {
                 ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0,
                               "[dyups] free dynamic upstream in find upstream"
                               " %ui", duscf->idx);
 
                 duscf->deleted = NGX_DYUPS_DELETED;
-                ngx_destroy_pool(duscf->pool);
-                duscf->pool = NULL;
+
+                if (duscf->pool) {
+                    ngx_destroy_pool(duscf->pool);
+                    duscf->pool = NULL;
+                }
             }
         }
 
@@ -1682,16 +1516,22 @@ ngx_dyups_init_upstream(ngx_http_dyups_srv_conf_t *duscf, ngx_str_t *name,
     }
 
     dscf = uscf->srv_conf[ngx_http_dyups_module.ctx_index];
-    duscf->count = &dscf->count;
+    duscf->ref = &dscf->ref;
     duscf->ctx = ctx;
     duscf->deleted = 0;
+
+#if (NGX_HTTP_UPSTREAM_RBTREE)
+    uscf->node.key = ngx_crc32_short(uscf->host.data, uscf->host.len);
+
+    ngx_rbtree_insert(&umcf->rbtree, &uscf->node);
+#endif
 
     return NGX_OK;
 }
 
 
 static void
-ngx_dyups_delete_upstream(ngx_http_dyups_srv_conf_t *duscf)
+ngx_dyups_mark_upstream_delete(ngx_http_dyups_srv_conf_t *duscf)
 {
     ngx_uint_t                      i;
     ngx_http_upstream_server_t     *us;
@@ -1707,15 +1547,22 @@ ngx_dyups_delete_upstream(ngx_http_dyups_srv_conf_t *duscf)
                   "[dyups] delete upstream \"%V\"", &duscf->upstream->host);
 
     us = uscf->servers->elts;
-    for (i = 0; i < uscf->servers->nelts; i++) { //将要删除的server标记为down
+    for (i = 0; i < uscf->servers->nelts; i++) {
         us[i].down = 1;
 
 #if (NGX_HTTP_UPSTREAM_CHECK)
-        ngx_http_upstream_check_delete_dynamic_peer(&uscf->host, us[i].addrs);
+        if (us[i].addrs) {
+            ngx_http_upstream_check_delete_dynamic_peer(&uscf->host,
+                                                        us[i].addrs);
+        }
 #endif
     }
 
     uscfp[duscf->idx] = &ngx_http_dyups_deleted_upstream;
+
+#if (NGX_HTTP_UPSTREAM_RBTREE)
+    ngx_rbtree_delete(&umcf->rbtree, &uscf->node);
+#endif
 
     duscf->deleted = NGX_DYUPS_DELETING;
 }
@@ -1757,420 +1604,6 @@ ngx_http_dyups_send_response(ngx_http_request_t *r, ngx_int_t status,
     out.next = NULL;
 
     ngx_http_finalize_request(r, ngx_http_output_filter(r, &out));
-}
-
-
-static ngx_int_t
-ngx_http_dyups_check_commands(ngx_array_t *arglist)
-{
-    ngx_int_t       rc;
-    ngx_url_t       u;
-    ngx_str_t      *value;
-    ngx_flag_t      found, match;
-    ngx_pool_t     *pool;
-    ngx_uint_t      i, j;
-    ngx_array_t    *line;
-    ngx_command_t  *cmd;
-
-    pool = ngx_create_pool(512, ngx_cycle->log);
-    if (pool == NULL) {
-        return NGX_ERROR;
-    }
-
-    found = 1;
-    line = arglist->elts;
-    for (i = 0; i < arglist->nelts; i++) {
-        value = line[i].elts;
-
-        /* TODO */
-        if (value[0].len == 6 &&
-            ngx_strncasecmp(value[0].data, (u_char *) "server", 6) == 0)
-        {
-            ngx_memzero(&u, sizeof(ngx_url_t));
-            found = 1;
-
-            u.url = value[1];
-            u.default_port = 80;
-
-            if (line[i].nelts < 2) {
-                rc = NGX_ERROR;
-                goto finish;
-            }
-
-            if (ngx_parse_url(pool, &u) != NGX_OK) {
-
-                if (u.err) {
-                    ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0,
-                                  "[dyups] %s in upstream \"%V\"",
-                                  u.err, &u.url);
-                }
-
-                rc = NGX_ERROR;
-                goto finish;
-            }
-
-        } else {
-
-            match = 0;
-            for (j = 0; j < ngx_max_module; j++) {
-                if (ngx_modules[j]->type != NGX_HTTP_MODULE) {
-                    continue;
-                }
-
-                if (ngx_modules[j]->ctx_index
-                    == ngx_http_upstream_module.ctx_index)
-                {
-                    continue;
-                }
-
-                cmd = ngx_modules[j]->commands;
-                if (cmd == NULL) {
-                    continue;
-                }
-
-                for ( /* void */ ; cmd->name.len; cmd++) {
-
-                    if (!(cmd->type & NGX_HTTP_UPS_CONF)) {
-                        continue;
-                    }
-
-                    if (cmd->set == NULL) {
-                        continue;
-                    }
-
-                    if (cmd->name.len != value[0].len
-                        || ngx_strncasecmp(cmd->name.data, value[0].data,
-                                           value[0].len) != 0)
-                    {
-                        continue;
-                    }
-
-                    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                                   "[dyups] check upstream \"%V\"",
-                                   &cmd->name);
-                    match = 1;
-
-                    if (!(cmd->type & NGX_CONF_ANY)) {
-
-                        if (cmd->type & NGX_CONF_FLAG) {
-
-                            if (line[i].nelts != 2) {
-                                rc = NGX_ERROR;
-                                goto finish;
-                            }
-
-                        } else if (cmd->type & NGX_CONF_1MORE) {
-
-                            if (line[i].nelts < 2) {
-                                rc = NGX_ERROR;
-                                goto finish;
-                            }
-
-                        } else if (cmd->type & NGX_CONF_2MORE) {
-
-                            if (line[i].nelts < 3) {
-                                rc = NGX_ERROR;
-                                goto finish;
-                            }
-
-                        } else if (line[i].nelts > NGX_CONF_MAX_ARGS) {
-
-                            rc = NGX_ERROR;
-                            goto finish;
-
-                        } else if (!(cmd->type
-                                     & argument_number[line[i].nelts - 1]))
-                        {
-                            rc = NGX_ERROR;
-                            goto finish;
-                        }
-
-                    }
-
-                }
-
-            }
-
-            if (!match) {
-                rc = NGX_ERROR;
-                goto finish;
-            }
-
-        }
-    }
-
-    if (!found) {
-        rc = NGX_ERROR;
-        goto finish;
-    }
-
-    rc = NGX_OK;
-
-finish:
-    ngx_destroy_pool(pool);
-
-    return rc;
-}
-
-
-static ngx_array_t *
-ngx_dyups_parse_content(ngx_pool_t *pool, ngx_buf_t *buf)
-{
-    ngx_int_t     rc;
-    ngx_buf_t     body;
-    ngx_array_t  *args_list, *args;
-
-#if (NGX_DEBUG)
-
-    args_list = ngx_array_create(pool, 1, sizeof(ngx_array_t));
-
-#else
-
-    args_list = ngx_array_create(pool, 16, sizeof(ngx_array_t));
-
-#endif
-
-    if (args_list == NULL) {
-        return NULL;
-    }
-
-    body = *buf;
-
-    for ( ;; ) {
-
-        args = ngx_array_push(args_list);
-        if (args == NULL) {
-            return NULL;
-        }
-
-#if (NGX_DEBUG)
-        rc = ngx_array_init(args, pool, 1, sizeof(ngx_str_t));
-
-#else
-        rc = ngx_array_init(args, pool, 16, sizeof(ngx_str_t));
-
-#endif
-        if (rc != NGX_OK) {
-            return NULL;
-        }
-
-        rc = ngx_dyups_conf_read_token(pool, &body, args);
-
-        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pool->log, 0,
-                       "[dyups] read token rc: %i", rc);
-
-        if (rc == NGX_OK) {
-
-#if (NGX_DEBUG)
-            ngx_str_t  *arg;
-            ngx_uint_t  i;
-
-            arg = args->elts;
-            for (i = 0; i < args->nelts; i++) {
-                ngx_log_debug2(NGX_LOG_DEBUG_HTTP, pool->log, 0,
-                               "[dyups] arg[%i]:%V", i, &arg[i]);
-            }
-#endif
-            continue;
-        }
-
-        if (rc == NGX_DONE) {
-            break;
-        }
-
-        /* NGX_ERROR */
-
-        return NULL;
-    }
-
-    args_list->nelts--;
-
-    return args_list;
-}
-
-
-static ngx_int_t
-ngx_dyups_conf_read_token(ngx_pool_t *pool, ngx_buf_t *body, ngx_array_t *args)
-{
-    u_char      ch, *start, *src, *dst;
-    ngx_str_t  *word;
-    ngx_uint_t  found, need_space, last_space, len;
-    ngx_uint_t  quoted, d_quoted, s_quoted, sharp_comment;
-
-    found = 0;
-    need_space = 0;
-    last_space = 1;
-    quoted = 0;
-    d_quoted = 0;
-    s_quoted = 0;
-    sharp_comment = 0;
-
-    start = body->pos;
-
-    for ( ;; ) {
-
-        if (body->pos >= body->last) {
-            if (args->nelts > 0 || !last_space) {
-                ngx_log_error(NGX_LOG_ERR, pool->log, 0,
-                              "unexpected end of body content");
-                return NGX_ERROR;
-            }
-
-            return NGX_DONE;
-        }
-
-        ch = *body->pos++;
-
-        if (ch == LF) {
-            sharp_comment = 0;
-        }
-
-        if (sharp_comment) {
-            continue;
-        }
-
-        if (quoted) {
-            quoted = 0;
-            continue;
-        }
-
-        if (need_space) {
-            if (ch == ' ' || ch == '\t' || ch == CR || ch == LF) {
-                last_space = 1;
-                need_space = 0;
-                continue;
-            }
-
-            if (ch == ';') {
-                return NGX_OK;
-            }
-        }
-
-        if (last_space) {
-            if (ch == ' ' || ch == '\t' || ch == CR || ch == LF) {
-                continue;
-            }
-
-            start = body->pos - 1;
-
-            switch (ch) {
-            case ';':
-                if (args->nelts == 0) {
-                    ngx_log_error(NGX_LOG_ERR, pool->log, 0,
-                                  "unexpected \"%c\"", ch);
-                    return NGX_ERROR;
-                }
-
-                return NGX_OK;
-
-            case '#':
-                sharp_comment = 1;
-                continue;
-
-            case '\\':
-                quoted = 1;
-                last_space = 0;
-                continue;
-
-            case '"':
-                start++;
-                d_quoted = 1;
-                last_space = 0;
-                continue;
-
-            case '\'':
-                start++;
-                s_quoted = 1;
-                last_space = 0;
-                continue;
-
-            default:
-                last_space = 0;
-            }
-
-        } else {
-
-            if (ch == '\\') {
-                quoted = 1;
-                continue;
-            }
-
-            if (d_quoted) {
-                if (ch == '"') {
-                    d_quoted = 0;
-                    need_space = 1;
-                    found = 1;
-                }
-
-            } else if (s_quoted) {
-                if (ch == '\'') {
-                    s_quoted = 0;
-                    need_space = 1;
-                    found = 1;
-                }
-
-            } else if (ch == ' ' || ch == '\t' || ch == CR || ch == LF
-                       || ch == ';')
-            {
-                last_space = 1;
-                found = 1;
-            }
-
-            if (found) {
-                word = ngx_array_push(args);
-                if (word == NULL) {
-                    return NGX_ERROR;
-                }
-
-                word->data = ngx_pnalloc(pool, body->pos - start + 1);
-                if (word->data == NULL) {
-                    return NGX_ERROR;
-                }
-
-                for (dst = word->data, src = start, len = 0;
-                     src < body->pos - 1;
-                     len++)
-                {
-                    if (*src == '\\') {
-                        switch (src[1]) {
-                        case '"':
-                        case '\'':
-                        case '\\':
-                            src++;
-                            break;
-
-                        case 't':
-                            *dst++ = '\t';
-                            src += 2;
-                            continue;
-
-                        case 'r':
-                            *dst++ = '\r';
-                            src += 2;
-                            continue;
-
-                        case 'n':
-                            *dst++ = '\n';
-                            src += 2;
-                            continue;
-                        }
-
-                    }
-                    *dst++ = *src++;
-                }
-                *dst = '\0';
-                word->len = len;
-
-                if (ch == ';') {
-                    return NGX_OK;
-                }
-
-                found = 0;
-            }
-        }
-
-    }
-
 }
 
 
@@ -2361,23 +1794,12 @@ ngx_http_dyups_init_peer(ngx_http_request_t *r,
         return NGX_ERROR;
     }
 
+    dscf->ref++;
+
     cln->handler = ngx_http_dyups_clean_request;
-    cln->data = ctx;
+    cln->data = &dscf->ref;
 
     return NGX_OK;
-}
-
-
-static void
-ngx_http_dyups_clean_request(void *data)
-{
-    ngx_http_dyups_ctx_t  *ctx = data;
-
-    ctx->scf->count--;
-
-    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                   "[dyups] http clean request count %i",
-                   ctx->scf->count);
 }
 
 
@@ -2386,11 +1808,9 @@ ngx_http_dyups_get_peer(ngx_peer_connection_t *pc, void *data)
 {
     ngx_http_dyups_ctx_t  *ctx = data;
 
-    ctx->scf->count++;
-
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
                    "[dyups] dynamic upstream get handler count %i",
-                   ctx->scf->count);
+                   ctx->scf->ref);
 
     return ctx->get(pc, ctx->data);
 }
@@ -2402,11 +1822,45 @@ ngx_http_dyups_free_peer(ngx_peer_connection_t *pc, void *data,
 {
     ngx_http_dyups_ctx_t  *ctx = data;
 
+    ngx_pool_cleanup_t  *cln;
+
+
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
                    "[dyups] dynamic upstream free handler count %i",
-                   ctx->scf->count);
+                   ctx->scf->ref);
+
+    if (pc->cached) {
+        goto done;
+    }
+
+    ctx->scf->ref++;
+
+    cln = ngx_pool_cleanup_add(pc->connection->pool, 0);
+    if (cln == NULL) {
+        ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                      "[dyups] dynamic upstream free peer may cause memleak %i",
+                      ctx->scf->ref);
+        goto done;
+    }
+
+    cln->handler = ngx_http_dyups_clean_request;
+    cln->data = &ctx->scf->ref;
+
+ done:
 
     ctx->free(pc, ctx->data, state);
+}
+
+
+static void
+ngx_http_dyups_clean_request(void *data)
+{
+    ngx_uint_t  *ref = data;
+
+    (*ref)--;
+
+    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
+                   "[dyups] http clean request count %i", *ref);
 }
 
 
@@ -2461,7 +1915,7 @@ static void
 ngx_http_dyups_read_msg_locked(ngx_event_t *ev)
 {
     ngx_int_t            i, rc;
-    ngx_str_t            path, content;
+    ngx_str_t            name, content;
     ngx_flag_t           found;
     ngx_time_t          *tp;
     ngx_pool_t          *pool;
@@ -2520,7 +1974,7 @@ ngx_http_dyups_read_msg_locked(ngx_event_t *ev)
 
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ev->log, 0,
                                   "[dyups] destroy msg %V:%V",
-                                  &msg->path, &msg->content);
+                                  &msg->name, &msg->content);
 
             ngx_dyups_destroy_msg(shpool, msg);
             continue;
@@ -2541,7 +1995,7 @@ ngx_http_dyups_read_msg_locked(ngx_event_t *ev)
         if (found) {
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ev->log, 0,
                            "[dyups] msg %V count %ui found",
-                           &msg->path, msg->count);
+                           &msg->name, msg->count);
             continue;
         }
 
@@ -2549,17 +2003,17 @@ ngx_http_dyups_read_msg_locked(ngx_event_t *ev)
         msg->count++;
 
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ev->log, 0,
-                       "[dyups] msg %V count %ui", &msg->path, msg->count);
+                       "[dyups] msg %V count %ui", &msg->name, msg->count);
 
-        path = msg->path;
+        name = msg->name;
         content = msg->content;
 
-        rc = ngx_dyups_sync_cmd(pool, &path, &content, msg->flag);
+        rc = ngx_dyups_sync_cmd(pool, &name, &content, msg->flag);
         if (rc != NGX_OK) {
             ngx_log_error(NGX_LOG_ALERT, ev->log, 0,
                           "[dyups] read msg error, may cause the "
-                          "config inaccuracy, path:%V, content:%V",
-                          &path, &content);
+                          "config inaccuracy, name:%V, content:%V",
+                          &name, &content);
         }
     }
 
@@ -2573,7 +2027,7 @@ ngx_http_dyups_read_msg_locked(ngx_event_t *ev)
 
 
 static ngx_int_t
-ngx_http_dyups_send_msg(ngx_str_t *path, ngx_buf_t *body, ngx_uint_t flag)
+ngx_http_dyups_send_msg(ngx_str_t *name, ngx_buf_t *body, ngx_uint_t flag)
 {
     ngx_core_conf_t    *ccf;
     ngx_slab_pool_t    *shpool;
@@ -2606,13 +2060,13 @@ ngx_http_dyups_send_msg(ngx_str_t *path, ngx_buf_t *body, ngx_uint_t flag)
     msg->pid[0] = ngx_pid;
     msg->count++;
 
-    msg->path.data = ngx_slab_alloc_locked(shpool, path->len);
-    if (msg->path.data == NULL) {
+    msg->name.data = ngx_slab_alloc_locked(shpool, name->len);
+    if (msg->name.data == NULL) {
         goto failed;
     }
 
-    ngx_memcpy(msg->path.data, path->data, path->len);
-    msg->path.len = path->len;
+    ngx_memcpy(msg->name.data, name->data, name->len);
+    msg->name.len = name->len;
 
     if (body) {
         msg->content.data = ngx_slab_alloc_locked(shpool,
@@ -2637,7 +2091,7 @@ ngx_http_dyups_send_msg(ngx_str_t *path, ngx_buf_t *body, ngx_uint_t flag)
 
     ngx_log_debug3(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
                    "[dyups] send msg %V count %ui version: %ui",
-                   &msg->path, msg->count, sh->version);
+                   &msg->name, msg->count, sh->version);
 
     ngx_queue_insert_head(&sh->msg_queue, &msg->queue);
 
@@ -2660,8 +2114,8 @@ ngx_dyups_destroy_msg(ngx_slab_pool_t *shpool, ngx_dyups_msg_t *msg)
         ngx_slab_free_locked(shpool, msg->pid);
     }
 
-    if (msg->path.data) {
-        ngx_slab_free_locked(shpool, msg->path.data);
+    if (msg->name.data) {
+        ngx_slab_free_locked(shpool, msg->name.data);
     }
 
     if (msg->content.data) {
@@ -2673,34 +2127,20 @@ ngx_dyups_destroy_msg(ngx_slab_pool_t *shpool, ngx_dyups_msg_t *msg)
 
 
 static ngx_int_t
-ngx_dyups_sync_cmd(ngx_pool_t *pool, ngx_str_t *path, ngx_str_t *content,
+ngx_dyups_sync_cmd(ngx_pool_t *pool, ngx_str_t *name, ngx_str_t *content,
     ngx_uint_t flag)
 {
     ngx_int_t     rc;
     ngx_buf_t     body;
-    ngx_str_t     name, *value, rv;
-    ngx_array_t  *res, *arglist;
-
-    res = ngx_dyups_parse_path(pool, path);
-    if (res == NULL) {
-        return NGX_ERROR;
-    }
-
-    if (res->nelts != 2) {
-        return NGX_ERROR;
-    }
-
-    value = res->elts;
-
-    name = value[1];
+    ngx_str_t     rv;
 
     if (flag == NGX_DYUPS_DELETE) {
 
-        rc = ngx_dyups_do_delete(&name, &rv);
+        rc = ngx_dyups_do_delete(name, &rv);
 
         ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0,
                        "[dyups] sync del: %V rv: %V rc: %i",
-                       &name, &rv, rc);
+                       name, &rv, rc);
 
         if (rc != NGX_HTTP_OK) {
             return NGX_ERROR;
@@ -2712,17 +2152,13 @@ ngx_dyups_sync_cmd(ngx_pool_t *pool, ngx_str_t *path, ngx_str_t *content,
 
         body.start = body.pos = content->data;
         body.end = body.last = content->data + content->len;
+        body.temporary = 1;
 
-        arglist = ngx_dyups_parse_content(pool, &body);
-        if (arglist == NULL) {
-            return NGX_ERROR;
-        }
-
-        rc = ngx_dyups_do_update(&name, arglist, &rv);
+        rc = ngx_dyups_do_update(name, &body, &rv);
 
         ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0,
                       "[dyups] sync add: %V rv: %V rc: %i",
-                      &name, &rv, rc);
+                      name, &rv, rc);
 
         if (rc != NGX_HTTP_OK) {
             return NGX_ERROR;
@@ -2732,58 +2168,6 @@ ngx_dyups_sync_cmd(ngx_pool_t *pool, ngx_str_t *path, ngx_str_t *content,
     }
 
     return NGX_ERROR;
-}
-
-
-static ngx_array_t *
-ngx_dyups_copy_args(ngx_pool_t *pool, ngx_array_t *arglist)
-{
-    ngx_int_t     rc;
-    ngx_str_t    *s, *st;
-    ngx_uint_t    i, j;
-    ngx_array_t  *al, *as, *ast;
-
-    al = ngx_array_create(pool, arglist->nelts, sizeof(ngx_array_t));
-    if (al == NULL) {
-        return NULL;
-    }
-
-    ast = arglist->elts;
-
-    for (i = 0; i < arglist->nelts; i++) {
-
-        as = ngx_array_push(al);
-
-        if (as == NULL) {
-            return NULL;
-        }
-
-        rc = ngx_array_init(as, pool, ast[i].nelts, sizeof(ngx_str_t));
-        if (rc != NGX_OK) {
-            return NULL;
-        }
-
-        st = ast[i].elts;
-
-        for (j = 0; j < ast[i].nelts; j++) {
-
-            s = ngx_array_push(as);
-
-            if (s == NULL) {
-                return NULL;
-            }
-
-            ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pool->log, 0,
-                           "[dyups] copy arg: %V", &st[j]);
-
-            s->data = ngx_pcalloc(pool, st[j].len + 1);
-
-            ngx_memcpy(s->data, st[j].data, st[j].len);
-            s->len = st[j].len;
-        }
-    }
-
-    return al;
 }
 
 
@@ -2878,6 +2262,9 @@ ngx_dyups_restore_upstreams(ngx_cycle_t *cycle, ngx_str_t *path)
     if (buf == NULL) {
         return NGX_ERROR;
     }
+
+    ngx_memzero(&ups, sizeof(ngx_buf_t));
+    ngx_memzero(&block, sizeof(ngx_buf_t));
 
 #if 1
     for (p = buf->pos; p < buf->last; p++) {
@@ -3001,47 +2388,33 @@ ngx_dyups_do_restore_upstream(ngx_buf_t *ups, ngx_buf_t *block)
 #endif
 
     ngx_int_t     rc;
-    ngx_str_t    *v, name, rv;
+    ngx_str_t     name, rv;
     ngx_pool_t   *pool;
-    ngx_array_t  *aups, *ablock;
+    ngx_conf_t    cf;
 
     pool = ngx_create_pool(ngx_pagesize, ngx_cycle->log);
     if (pool == NULL) {
         return NGX_ERROR;
     }
 
-    aups = ngx_dyups_parse_content(pool, ups);
-    if (aups == NULL) {
+    ngx_memzero(&cf, sizeof(ngx_conf_t));
+    cf.pool = pool;
+    cf.log = ngx_cycle->log;
+    cf.args = ngx_array_create(pool, 2, sizeof(ngx_str_t));
+    if (cf.args == NULL) {
         goto failed;
     }
 
-    if (aups->nelts != 1) {
+    if (ngx_dyups_parse_upstream_name(&cf, ups, &name) == NGX_CONF_ERROR) {
+        ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                      "[dyups] cannot parse upstream name");
         goto failed;
     }
-
-    aups = aups->elts;
-
-    if (aups->nelts != 2) {
-        goto failed;
-    }
-
-    v = aups->elts;
-
-    if (ngx_strncmp(v[0].data, "upstream", 8) != 0) {
-        goto failed;
-    }
-
-    name = v[1];
 
     ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, 0,
                   "[dyups] restore %V", &name);
 
-    ablock = ngx_dyups_parse_content(pool, block);
-    if (ablock == NULL) {
-        goto failed;
-    }
-
-    rc = ngx_dyups_do_update(&name, ablock, &rv);
+    rc = ngx_dyups_do_update(&name, block, &rv);
 
     ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0,
                   "[dyups] restore add: %V rv: %V rc: rc: %i",

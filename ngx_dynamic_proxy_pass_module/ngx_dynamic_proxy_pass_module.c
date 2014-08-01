@@ -4,7 +4,7 @@
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
-#include "ngx_http_dyups_module.h"
+#include "ngx_http_dyups.h"
 
 #define DEFAULT_LB_LUA_FILE "/usr/local/nginx/conf/phoenix-slb/rule.lua"
 #define DEFAULT_DYPP_KEY "dypp_key"

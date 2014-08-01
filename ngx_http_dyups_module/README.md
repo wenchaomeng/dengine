@@ -1,10 +1,13 @@
 ## Description
 This module can be used to update your upstream-list without reloadding Nginx.
 
+And this module compatible with [lua-upstream-nginx-module](https://github.com/agentzh/lua-upstream-nginx-module), You can use `lua-upstream-nginx-module` to get more detail infomation of upstream.
+
 TODO:
 
-1. Support adding server by hostname without blocking process.
-2. It can not work with common `nginx_upstream_check_module`, if you still want to use this module, you can try [this branch of Tengine](https://github.com/yaoweibin/tengine/tree/dynamic_upstream_check) witch contains a patched upstream check module.
+It can not work with common `nginx_upstream_check_module`, if you still want to use this module, you can try [this branch of Tengine](https://github.com/yaoweibin/tengine/tree/dynamic_upstream_check) witch contains a patched upstream check module.
+
+Or Use the `upstream_check-tengine-2.0.patch` to patch tengine2.0
 
 ### Config Example
 
@@ -186,7 +189,54 @@ host2
 server 127.0.0.1:8089
 ```
 
+## API
+```c
+extern ngx_flag_t ngx_http_dyups_api_enable;
+ngx_int_t ngx_dyups_update_upstream(ngx_str_t *name, ngx_buf_t *buf,
+    ngx_str_t *rv);
+ngx_int_t ngx_dyups_delete_upstream(ngx_str_t *name, ngx_str_t *rv);
+```
+
+## Lua API Example
+```lua
+content_by_lua '
+    local dyups = require "ngx.dyups"
+
+    local status, rv = dyups.update("test", [[server 127.0.0.1:8088;]]);
+    ngx.print(status, rv)
+    if status ~= 200 then
+        ngx.print(status, rv)
+        return
+    end
+    ngx.print("update success")
+
+    status, rv = dyups.delete("test")
+    if status ~= 200 then
+        ngx.print(status, rv)
+        return
+    end
+    ngx.print("delete success")
+';
+
+```
+
+
 ## Change Log
+
+### RELEASE V0.2.7
+
+Supported: C API and Lua API
+
+
+### RELEASE V0.2.6
+Bugfixed: Supported sandbox before updatting
+
+
+### RELEASE V0.2.5
+1. Bugfixed: wrong string comparison for string "upstream", @chobits
+2. Bugfixed: that response of /detail uri has no Content-Length header, @chobits
+3. Feature: if you use this [branch of tengine](https://github.com/alibaba/tengine/tree/jst), update upstream rbtree, @SarahWang
+4. Feature: simplify upstream parsing methods via ngx_conf_parse api, @chobits
 
 ### RELEASE V0.2.4
 
@@ -224,7 +274,7 @@ $ TEST_NGINX_BINARY=/path/to/your/nginx/dir/sbin/nginx prove ./dyups.t
 
 These codes are licenced under the BSD license.
 
-Copyright (C) 2012-2013 by Zhuo Yuan (yzprofile) <yzprofiles@gmail.com>, Alibaba Inc.
+Copyright (C) 2012-2014 by Zhuo Yuan (yzprofile) <yzprofiles@gmail.com>, Alibaba Inc.
 
 All rights reserved.
 
