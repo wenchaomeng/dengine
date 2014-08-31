@@ -1,6 +1,7 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include "ngx_upstream_degrade.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -11,11 +12,13 @@
 #define DEFAULT_MAX_SERVER 200
 #define LUA_VM_MAX_NUM 100
 
+
 typedef struct {
 	ngx_str_t dp_domain;
 	ngx_str_t dypp_lua_file;
 	ngx_str_t dypp_key;
 	lua_State *L;
+
 } ngx_http_dypp_loc_conf_t;
 
 typedef struct {
@@ -37,13 +40,13 @@ lua_vm l_vm[LUA_VM_MAX_NUM];
 //static ngx_http_output_body_filter_pt  ngx_http_next_body_filter;
 static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
 
+static ngx_int_t ngx_http_dypp_init_process(ngx_cycle_t* cycle);
+
 static void* ngx_http_dypp_create_loc_conf(ngx_conf_t* cf);
 
 static char* ngx_http_dypp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child);
 
 static ngx_int_t ngx_http_dypp_preconfig(ngx_conf_t *cf);
-
-static ngx_int_t  ngx_http_dypp_init_process(ngx_cycle_t *cycle);
 
 ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_value_t *v, uintptr_t data);
 
@@ -109,6 +112,29 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		NULL
 	},
 
+	{
+		ngx_string("dypp_degrade_rate"), // The command name
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
+		ngx_http_dypp_set_degrade_rate, // The command handler
+		NGX_HTTP_SRV_CONF_OFFSET,
+		offsetof(ngx_http_dypp_srv_conf_t, degrade_rate),
+		NULL
+	},
+
+    { ngx_string("degrate_shm_size"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
+      ngx_http_dypp_degrade_shm_size,
+      0,
+      0,
+      NULL },
+
+      { ngx_string("upstream_degrate_interface"),
+    	NGX_HTTP_LOC_CONF|NGX_CONF_NOARGS,
+    	ngx_http_upstream_degrade_interface,
+        0,
+        0,
+        NULL },
+
 	ngx_null_command
 };
 
@@ -129,9 +155,9 @@ static ngx_command_t  ngx_dynamic_proxy_pass_filter_commands[] = {
 static ngx_http_module_t ngx_dynamic_proxy_pass_module_ctx = {
 	ngx_http_dypp_preconfig,
 	NULL,
-	NULL,
-	NULL,
-	NULL,
+	ngx_http_dypp_create_main_conf,
+	ngx_http_dypp_init_main_conf,
+	ngx_http_dypp_create_srv_conf,
 	NULL,
 	ngx_http_dypp_create_loc_conf,
 	ngx_http_dypp_merge_loc_conf
@@ -181,6 +207,35 @@ ngx_module_t  ngx_dynamic_proxy_pass_filter_module = {
 	NGX_MODULE_V1_PADDING
 };
 
+static ngx_int_t ngx_http_dypp_init_process(ngx_cycle_t* cycle) {
+
+	l_vm[0].L = luaL_newstate();
+	if (l_vm[0].L == NULL) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Can not init lua");
+		return NGX_ERROR;
+	}
+	luaL_openlibs(l_vm[0].L);
+	lua_register(l_vm[0].L, "get_cookie", get_cookie);
+	lua_register(l_vm[0].L, "get_upstream_list", get_upstream_list);
+	lua_register(l_vm[0].L, "get_ngx_http_variable", get_ngx_http_variable);
+	if (luaL_loadfile(l_vm[0].L, DEFAULT_LB_LUA_FILE)
+			|| lua_pcall(l_vm[0].L, 0, 0, 0)) {
+		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Can not init lua file:%s",
+				DEFAULT_LB_LUA_FILE);
+		return NGX_ERROR;
+	}
+	l_vm[0].name.len = ngx_strlen(DEFAULT_LB_LUA_FILE);
+	l_vm[0].name.data = ngx_pcalloc(cycle->pool, l_vm[0].name.len + 1);
+	if (!l_vm[0].name.data) {
+		return NGX_ERROR;
+	}
+	ngx_memcpy(l_vm[0].name.data, DEFAULT_LB_LUA_FILE, l_vm[0].name.len);
+
+
+	ngx_http_dypp_add_timers(cycle);
+	return NGX_OK;
+}
+
 static void* ngx_http_dypp_create_loc_conf(ngx_conf_t* cf) {
 	ngx_http_dypp_loc_conf_t* conf;
 
@@ -206,6 +261,9 @@ static char* ngx_http_dypp_merge_loc_conf(ngx_conf_t *cf, void *parent, void *ch
 	ngx_conf_merge_str_value(conf->dypp_lua_file, prev->dypp_lua_file, "");
 	ngx_conf_merge_str_value(conf->dypp_key, prev->dypp_key, "");
 
+	ngx_log_error(NGX_LOG_NOTICE, cf->log, 0, "dp_domain:%V, dypp_lua_file:%V, dypp_key:%V",
+			&conf->dp_domain, &conf->dypp_lua_file, &conf->dypp_key);
+
 	return NGX_CONF_OK;
 }
 
@@ -226,30 +284,6 @@ ngx_http_dypp_preconfig(ngx_conf_t *cf){
 	//设置回调
 	var->get_handler = ngx_http_dypp_get_variable;
 	//var->data = (uintptr_t) ctx;
-	return NGX_OK;
-}
-
-
-static ngx_int_t  ngx_http_dypp_init_process(ngx_cycle_t *cycle){
-	l_vm[0].L = luaL_newstate();
-	if(l_vm[0].L == NULL) {
-		ngx_log_error(NGX_LOG_ERR, cycle->log, 0, "Can not init lua");
-		return NGX_ERROR;
-	}
-	luaL_openlibs(l_vm[0].L);
-	lua_register(l_vm[0].L, "get_cookie", get_cookie);
-	lua_register(l_vm[0].L, "get_upstream_list", get_upstream_list);
-	lua_register(l_vm[0].L, "get_ngx_http_variable", get_ngx_http_variable);
-
-	if (luaL_loadfile(l_vm[0].L, DEFAULT_LB_LUA_FILE) || lua_pcall(l_vm[0].L,0,0,0)) {
-		return NGX_ERROR;
-	}
-	l_vm[0].name.len = ngx_strlen(DEFAULT_LB_LUA_FILE);
-	l_vm[0].name.data = ngx_pcalloc(cycle->pool, l_vm[0].name.len + 1);
-	if(!l_vm[0].name.data){
-		return NGX_ERROR;
-	}
-	ngx_memcpy(l_vm[0].name.data, DEFAULT_LB_LUA_FILE, l_vm[0].name.len);	
 	return NGX_OK;
 }
 
@@ -293,45 +327,18 @@ static int get_ngx_http_variable(lua_State *L) {
 	vv = ngx_http_get_variable(cur_r, &name, hash);
 
 	if(!vv || vv->len == 0 || !vv->data || vv->not_found == 1){
+		//if none cookie 
+		//generate id
 		char buf[200];
 		memset(buf, 0, 200);
 		sprintf(buf, "%lu", generate_uid());
 		lua_pushlstring(L, buf, ngx_strlen(buf));//TODO
-		headers = &(cur_r->headers_in.headers);
-		elt = ngx_list_push(headers);
-		if(!elt){
-			return 1;
-		}
-		elt->key.data = hdlc->dypp_key.data;
-		elt->key.len = hdlc->dypp_key.len;
-		elt->value.data = ngx_pcalloc(cur_r->pool, 100);
-		if(!elt->value.data){
-			return 1;
-		}
-		ngx_sprintf(elt->value.data, "%d", get_uid());
-		elt->value.len = ngx_strlen(elt->value.data);
-		elt->lowcase_key = ngx_pnalloc(cur_r->pool, elt->key.len);
-		if(!elt->lowcase_key){
-			return 1;
-		}
-		elt->hash = ngx_hash_strlow(elt->lowcase_key, elt->key.data, elt->key.len);
-		return 1;
-		//		lowcase = ngx_pnalloc(cur_r->pool, ngx_strlen(DEFAULT_COOKIE_UUID));
-		//		hash = ngx_hash_strlow(lowcase, DEFAULT_COOKIE_UUID, ngx_strlen(DEFAULT_COOKIE_UUID));//TODO
-		//		name.len = ngx_strlen(DEFAULT_COOKIE_UUID);
-		//		name.data = lowcase;
-		//		vv = ngx_http_get_variable(cur_r, &name, hash);
-	}
-	if(vv && vv->len > 0 && vv->data && vv->not_found != 1) {
-		lua_pushlstring(L, (char*)vv->data, vv->len);
-		return 1;
-	} else {
-		char buf[2];
-		buf[0] = '0';
-		buf[1] = '\0';
-		lua_pushlstring(L, buf, 1);//TODO
+		//one arg for lua
 		return 1;
 	}
+
+	lua_pushlstring(L, (char*)vv->data, vv->len);
+	return 1;
 }
 
 extern ngx_module_t  ngx_http_dyups_module;
@@ -347,7 +354,7 @@ static int get_upstream_list(lua_State *L) {
 		duscf = &duscfs[i];
 
 		ngx_str_t *upstream_name = &duscf->upstream->host;
-		//ngx_log_error(NGX_LOG_ERR, cur_r->connection->log, 0, "hupengtest %s", (char*)upstream_name->data);
+		ngx_log_error(NGX_LOG_EMERG, cur_r->connection->log, 0, "upstreams %d :%s",i, (char*)upstream_name->data);
 		if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, cur_dp_domain->len) == 0) {
 			if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, upstream_name->len) == 0) {
 				chosen_upstream_cnt++;
