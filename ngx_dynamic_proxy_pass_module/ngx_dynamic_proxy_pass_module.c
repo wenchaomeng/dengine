@@ -33,11 +33,8 @@ typedef struct {
 ngx_http_request_t *cur_r;
 ngx_str_t *cur_dp_domain;
 unsigned long uid = 0;
-int weight_list[DEFAULT_MAX_SERVER];
-int weight_list_on = 0;
 lua_vm l_vm[LUA_VM_MAX_NUM];
 
-//static ngx_http_output_body_filter_pt  ngx_http_next_body_filter;
 static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
 
 static ngx_int_t ngx_http_dypp_init_process(ngx_cycle_t* cycle);
@@ -70,11 +67,8 @@ static ngx_int_t set_header(ngx_http_request_t* r, ngx_str_t* key, ngx_str_t* va
 
 static unsigned long generate_uid();
 
-static unsigned long get_uid();
-
 static u_char* has_generate_uid(ngx_http_request_t* r);
 
-static char * set_weight(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 
 static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
@@ -100,15 +94,6 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		ngx_conf_set_str_slot, // The command handler
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_dypp_loc_conf_t, dypp_key),
-		NULL
-	},
-
-	{
-		ngx_string("dypp_weight"), // The command name
-		NGX_HTTP_UPS_CONF|NGX_CONF_TAKE1,
-		set_weight, // The command handler
-		0,
-		0,
 		NULL
 	},
 
@@ -341,59 +326,96 @@ static int get_ngx_http_variable(lua_State *L) {
 	return 1;
 }
 
-extern ngx_module_t  ngx_http_dyups_module;
+extern ngx_http_dypp_main_conf_t *dmcf_global;
+
+typedef struct {
+	ngx_str_t 	upstream_name;
+	ngx_uint_t 	weight;
+	ngx_uint_t  degrate_state;
+    ngx_uint_t 	degrate_up_count;
+} ngx_http_dypp_upstream_helper;
+
 static int get_upstream_list(lua_State *L) {
-	ngx_http_dyups_main_conf_t  *dumcf;
-	dumcf = ngx_http_get_module_main_conf(cur_r, ngx_http_dyups_module);
 
-	ngx_uint_t i, chosen_upstream_cnt;
-	chosen_upstream_cnt = 0;
-	ngx_http_dyups_srv_conf_t *duscfs, *duscf;
-	duscfs = dumcf->dy_upstreams.elts;
-	for (i = 0; i < dumcf->dy_upstreams.nelts; i++) {
-		duscf = &duscfs[i];
+	ngx_http_upstream_degrades_shm_t	*udshm = dmcf_global->udshm;
+	ngx_int_t 	i, backup = -1, exact = -1, count = 0;
+	u_char		use_backup = 0;
+	ngx_http_upstream_degrade_shm_t * degrade = udshm->uds;
+	ngx_str_t *upstream_name;
+	u_char *temp_name;
+	ngx_array_t	*upstreams;
+	ngx_http_dypp_upstream_helper *temp;
+	ngx_log_t *log = cur_r->pool->log;
 
-		ngx_str_t *upstream_name = &duscf->upstream->host;
-		ngx_log_error(NGX_LOG_EMERG, cur_r->connection->log, 0, "upstreams %d :%s",i, (char*)upstream_name->data);
-		if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, cur_dp_domain->len) == 0) {
-			if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, upstream_name->len) == 0) {
-				chosen_upstream_cnt++;
-				lua_pushlstring(L, (char*)duscf->upstream->host.data, duscf->upstream->host.len);
-				if(weight_list_on){
-					if(weight_list[i] == 0){
-						lua_pushinteger(L, weight_list[i] + 1);
-					}
-					else{
-						lua_pushinteger(L, weight_list[i]);
-					}
-				}
-				else{
-					lua_pushinteger(L, duscf->upstream->servers->nelts);
-				}
-			}
-			else{
-				if(upstream_name->data[cur_dp_domain->len] == '@') {
-					chosen_upstream_cnt++;
-					lua_pushlstring(L, (char*)duscf->upstream->host.data, duscf->upstream->host.len);
-					if(weight_list_on){
-						if(weight_list[i] == 0){
-							lua_pushinteger(L, weight_list[i] + 1);
-						}
-						else{
-							lua_pushinteger(L, weight_list[i]);
-						}
-					}
-					else{
-						lua_pushinteger(L, duscf->upstream->servers->nelts);
-					}
+	upstreams = ngx_array_create(cur_r->pool, udshm->upstream_count, sizeof(ngx_http_dypp_upstream_helper));
 
-				}
-			}
-		}
-
+	if(upstreams == NULL){
+		goto fail;
 	}
 
-	return 2 * chosen_upstream_cnt;
+	ngx_shmtx_lock(&udshm->mutex);
+
+	for( i=0 ; i<udshm->upstream_count; i++){
+
+		upstream_name = &degrade[i].upstream_name;
+		if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, cur_dp_domain->len) == 0) {
+
+			if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, upstream_name->len) == 0) {
+				exact = count;
+				ngx_log_error(NGX_LOG_NOTICE, log, 0, "[get_upstream_list]found exact: %ui", exact);
+			}else if(upstream_name->data[cur_dp_domain->len] == '@') {
+				if(upstream_name->len == cur_dp_domain->len + UPSTREA_DEGRATE_BACKUP_NAME_LENGTH + 1){
+					if(ngx_strncmp(&upstream_name->data[cur_dp_domain->len + 1], UPSTREA_DEGRATE_BACKUP_NAME, UPSTREA_DEGRATE_BACKUP_NAME_LENGTH) == 0){
+						//backup
+						backup = count;
+						ngx_log_error(NGX_LOG_NOTICE, log, 0, "[get_upstream_list]found backup: %ui", backup);
+					}
+				}
+			}
+			temp = ngx_array_push(upstreams);
+			temp->upstream_name.data = ngx_palloc(cur_r->pool, upstream_name->len);
+			if(temp->upstream_name.data == NULL){
+				goto fail;
+			}
+			temp->upstream_name.len = upstream_name->len;
+			ngx_memcpy(temp->upstream_name.data, upstream_name->data, upstream_name->len);
+			temp->weight = degrade[i].server_count;
+			temp->degrate_up_count = degrade[i].degrate_up_count;
+			temp->degrate_state =degrade[i].degrate_state;
+			count++;
+		}
+	}
+    ngx_shmtx_unlock(&udshm->mutex);
+
+
+    temp = upstreams->elts;
+    if(backup != -1 && exact != -1 && !temp[exact].degrate_state && temp[backup].degrate_up_count > 0){
+    	//降级
+		ngx_log_error(NGX_LOG_NOTICE, log, 0, "[get_upstream_list]degrade to: %V", &temp[backup].upstream_name);
+    	use_backup = 1;
+    }
+
+    count = 0;
+    for(i=0 ; i<upstreams->nelts ;i++){
+
+    	if( i == exact && use_backup){
+    		continue;
+    	}
+    	if( i == backup && !use_backup){
+    		continue;
+    	}
+    	lua_pushlstring(L, (char*)temp[i].upstream_name.data, temp[i].upstream_name.len);
+    	lua_pushinteger(L, temp[i].weight);
+    	count++;
+    }
+
+    return 2*count;
+
+
+fail:
+	lua_pushlstring(L, (char*)cur_dp_domain->data, cur_dp_domain->len);
+	lua_pushinteger(L, 1);
+	return 2;
 }
 
 static u_char* call_lua(ngx_http_request_t *r, lua_State *L) {
@@ -451,66 +473,21 @@ ngx_int_t ngx_http_dypp_get_variable (ngx_http_request_t *r, ngx_http_variable_v
 	}
 	cur_dp_domain = &hdlc->dp_domain;
 
-	//ngx_str_t baidu = ngx_string("baidu");
-	//ngx_str_t dianping = ngx_string("dianping");
-
 	u_char *chosen_upstream = call_lua(r, hdlc->L);
 	if(!chosen_upstream){
 		return NGX_ERROR;
 	}
-	/*
-	   if(ahlf == NULL) {
-	   call_lua(r);
-	   }
-	   char* chosen_upstream = ngx_pcalloc(r->pool, 6);
-	   strcpy(chosen_upstream, "six@0");
-	   */
 
-	if(r->headers_in.cookies.nelts > 0){
-
-		/*
-		   ngx_str_t *value = ngx_pnalloc(r->pool, sizeof(ngx_str_t));
-		   ngx_str_t cookie_name = ngx_string("UID");
-		   ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &cookie_name, value);
-		   ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "UID %V", value);
-		   */
-
-		/*	
-			if (ngx_strncasecmp(value->data, baidu.data, baidu.len) == 0) {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "GOTO BIDU");
-			chosen_pool = &baidu;
-			} else {
-			ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "GOTO DP");
-			chosen_pool = &dianping;
-			}
-			*/
-
-		/*
-		   ngx_table_elt_t** cookies = r->headers_in.cookies.elts;
-		   int i = 0;
-		   for(i = 0; i < (int)r->headers_in.cookies.nelts; i++){
-		   ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "COOKIE %V", &cookies[i]->value);
-		   }
-		   */
-	}
 	v->len = strlen((char*)chosen_upstream);
 	v->data = (u_char*)chosen_upstream;
-	/*
-	   if (v->data == NULL) {
-	   return NGX_ERROR;
-	   }
-	   ngx_memcpy(v->data, chosen_pool->data, chosen_pool->len);
-	   */
 	v->valid = 1;
 
 	return NGX_OK;
 }
 
-	static ngx_int_t
+static ngx_int_t
 ngx_dynamic_proxy_pass_filter_init(ngx_conf_t *cf)
 {
-	//	ngx_http_next_body_filter = ngx_http_top_body_filter;
-	//	ngx_http_top_body_filter = ngx_cat_body_filter;
 
 	ngx_http_next_header_filter = ngx_http_top_header_filter;
 	ngx_http_top_header_filter = ngx_dynamic_proxy_pass_header_filter;
@@ -548,7 +525,6 @@ static ngx_int_t ngx_dynamic_proxy_pass_header_filter(ngx_http_request_t *r){
 
 		return ngx_http_next_header_filter(r);
 
-		//ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "hupengtest dynamic proxy module!!!!!!!!!!!!");
 	}
 
 	return ngx_http_next_header_filter(r);
@@ -578,9 +554,6 @@ ngx_dynamic_proxy_pass_filter_merge_conf(ngx_conf_t *cf, void *parent, void *chi
 	ngx_conf_merge_uint_value(conf->dypp_key_generate, prev->dypp_key_generate, 1);
 	return NGX_CONF_OK;
 }
-
-
-
 
 static ngx_int_t set_header(ngx_http_request_t* r, ngx_str_t* key, ngx_str_t* value){
 	ngx_table_elt_t             *h;
@@ -661,10 +634,6 @@ static unsigned long generate_uid(){
 	return ++uid;
 }
 
-static unsigned long get_uid(){
-	return uid;
-}
-
 static u_char* has_generate_uid(ngx_http_request_t* r){
 	u_char *lowcase;
 	u_char *data;
@@ -693,32 +662,4 @@ static u_char* has_generate_uid(ngx_http_request_t* r){
 		return vv->data;
 	}
 	return NULL;
-}
-
-static char *
-set_weight(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
-	weight_list_on = 1;
-	ngx_int_t        np;
-	ngx_str_t        *value;
-	ngx_conf_post_t  *post;
-
-	value = cf->args->elts;
-	np = ngx_atoi(value[1].data, value[1].len);
-	if (np == NGX_ERROR) {
-		return "invalid number";
-	}
-	if (np <= 0) {
-		return "invalid number, dypp_weight must be greater than 0";
-	}
-	int i = 0;
-	while(weight_list[i] != 0){
-		i++;
-	}
-	weight_list[i] = np;
-
-	if (cmd->post) {
-		post = cmd->post;
-		return post->post_handler(cf, post, (void*)&np);
-	}
-	return NGX_CONF_OK;
 }

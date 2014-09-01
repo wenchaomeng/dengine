@@ -2,6 +2,9 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#define UPSTREA_DEGRATE_BACKUP_NAME "BACKUP"
+#define UPSTREA_DEGRATE_BACKUP_NAME_LENGTH 6
+
 #define UPSTREA_DEGRATE_DEFAULT_RATE 60
 
 #define UPSTREAM_DEGRADE_FORCE_ON_LINE 1

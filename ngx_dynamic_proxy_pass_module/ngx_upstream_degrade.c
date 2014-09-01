@@ -6,7 +6,7 @@ extern ngx_module_t  ngx_http_upstream_check_module;
 
 static ngx_uint_t ngx_upstream_shm_generation = 0;
 
-static ngx_http_dypp_main_conf_t     *dmcf_global;
+ngx_http_dypp_main_conf_t     *dmcf_global;
 
 static char * ngx_http_dypp_init_shm(ngx_conf_t *cf, void *conf);
 static ngx_int_t ngx_http_dypp_init_shm_zone(ngx_shm_zone_t *shm_zone, void *data);
