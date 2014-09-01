@@ -98,7 +98,7 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 	},
 
 	{
-		ngx_string("dypp_degrade_rate"), // The command name
+		ngx_string("upstream_degrade_rate"), // The command name
 		NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
 		ngx_http_dypp_set_degrade_rate, // The command handler
 		NGX_HTTP_SRV_CONF_OFFSET,
@@ -106,7 +106,7 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		NULL
 	},
 
-    { ngx_string("degrate_shm_size"),
+    { ngx_string("upstream_degrate_shm_size"),
       NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
       ngx_http_dypp_degrade_shm_size,
       0,
