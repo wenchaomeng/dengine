@@ -261,7 +261,7 @@ ngx_http_dypp_add_timers(ngx_cycle_t *cycle){
 
 	ngx_log_error(NGX_LOG_NOTICE, event->log, 0, "add timer %M", t);
 
-//	ngx_event_add_timer(event, t);
+	ngx_event_add_timer(event, t);
     return NGX_OK;
 }
 
