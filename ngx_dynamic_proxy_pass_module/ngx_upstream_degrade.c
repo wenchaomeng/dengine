@@ -425,6 +425,7 @@ static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t tree
 		ngx_rbtree_insert(&tree, (ngx_rbtree_node_t *)degrade_node);
     }
 
+    return NGX_OK;
 }
 
 
