@@ -2,8 +2,7 @@
 
 extern ngx_module_t ngx_dynamic_proxy_pass_module;
 extern ngx_http_upstream_check_peers_t *check_peers_ctx;
-extern ngx_module_t  ngx_http_upstream_check_module;
-
+extern ngx_module_t  ngx_http_upstream_module;
 static ngx_uint_t ngx_upstream_shm_generation = 0;
 
 ngx_http_dypp_main_conf_t     *dmcf_global;
@@ -13,6 +12,7 @@ static ngx_int_t ngx_http_dypp_init_shm_zone(ngx_shm_zone_t *shm_zone, void *dat
 static ngx_int_t ngx_http_dypp_get_shm_name(ngx_str_t *shm_name, ngx_pool_t *pool,
     ngx_uint_t generation);
 static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf);
+static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t tree, ngx_pool_t *pool, ngx_log_t *log);
 void *
 ngx_http_dypp_create_main_conf(ngx_conf_t *cf)
 {
@@ -23,6 +23,7 @@ ngx_http_dypp_create_main_conf(ngx_conf_t *cf)
     if (dmcf == NULL) {
         return NULL;
     }
+
 	//set global reference
 	dmcf_global = dmcf;
     return dmcf;
@@ -76,8 +77,9 @@ char *
 ngx_http_dypp_init_main_conf(ngx_conf_t *cf, void *conf)
 {
 	ngx_http_upstream_main_conf_t 			*umcf;	
-    ngx_http_dypp_main_conf_t  *dmcf = dmcf_global;
+    ngx_http_dypp_main_conf_t  *dmcf = conf;
 
+    dmcf->ctx = cf->ctx;
 	//upstream大小
 	umcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_upstream_module);
 
@@ -109,9 +111,9 @@ ngx_http_dypp_init_shm(ngx_conf_t *cf, void *conf)
     shm_zone = ngx_shared_memory_add(cf, &shm_name, shm_size,
                                      &ngx_dynamic_proxy_pass_module);
 
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, cf->log, 0,
+	ngx_log_error(NGX_LOG_NOTICE, cf->log, 0,
                    "http degrade, shm_name:%V, shm_zone size:%ui",
-                   shm_name, shm_size);
+                   &shm_name, shm_size);
 
     shm_zone->data = cf->pool;
 
@@ -148,7 +150,6 @@ ngx_http_dypp_init_shm_zone(ngx_shm_zone_t *shm_zone, void *data)
     ngx_slab_pool_t                     *shpool;
 	ngx_http_upstream_degrades_shm_t 	*udshm;
     u_char  *file;
-    ngx_str_t lock_file_name = ngx_string("degrade");
 
 
     pool = shm_zone->data;
@@ -180,6 +181,7 @@ ngx_http_dypp_init_shm_zone(ngx_shm_zone_t *shm_zone, void *data)
 		file = NULL;
 
 	#else
+	    ngx_str_t lock_file_name = ngx_string("degrade");
 
 		file = ngx_pnalloc(pool, ngx_cycle->lock_file.len + lock_file_name.len + 1);
 		if (file == NULL) {
@@ -232,7 +234,6 @@ ngx_http_dypp_degrade_shm_size(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 ngx_int_t
 ngx_http_dypp_add_timers(ngx_cycle_t *cycle){
 
-    ngx_uint_t                           i;
     ngx_msec_t                           t, delay;
     ngx_http_dypp_main_conf_t *dmcf = dmcf_global;
 	ngx_event_t *event;
@@ -277,6 +278,7 @@ ngx_int_t ngx_http_upstream_degrade_update_shm(ngx_rbtree_node_t *current, ngx_r
 	uds->degrade_rate = node->degrade_rate;
 	uds->server_count = node->server_count;
 	uds->degrate_up_count = node->degrate_up_count;
+	uds->upstream_checked = node->upstream_checked;
 	upstream_name = node->str;
 
 	uds->upstream_name.len = upstream_name.len;
@@ -311,7 +313,7 @@ void ngx_http_upstream_degrade_calculate_state(){
 
 		rate = uds[i].degrate_up_count*100/uds[i].server_count;
 		uds[i].degrate_state = rate >= uds[i].degrade_rate ? UPSTREAM_DEGRADE_STATE_ON : UPSTREAM_DEGRADE_STATE_OFF;
-		ngx_log_error(NGX_LOG_NOTICE, ngx_cycle->log, 0, "upstream:%V, total: %ui, upcount: %ui, rate: %ui, degrade_rate:%ui",
+		ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, "upstream:%V, total: %ui, upcount: %ui, rate: %ui, degrade_rate:%ui",
 				&uds[i].upstream_name, uds[i].server_count, uds[i].degrate_up_count, rate, uds[i].degrade_rate);
 	}
 
@@ -357,6 +359,7 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 			}
 			degrade_node->str = *upstream_name;
 			degrade_node->node.key = hash;
+			degrade_node->upstream_checked = 1;
 			ngx_rbtree_insert(&tree, (ngx_rbtree_node_t *)degrade_node);
 		}
 
@@ -368,6 +371,9 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 			degrade_node->degrate_up_count++;
 		}
 	}
+	//增加未做健康监测的pool
+	ngx_http_upstream_degrade_add_unchecked_pools(tree, pool, event->log);
+
 
 	//更新共享内存
     ngx_shmtx_lock(&dmcf->udshm->mutex);
@@ -384,6 +390,41 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 fail:
 	ngx_event_add_timer(event, dmcf_global->degrade_interval);
 	ngx_destroy_pool(pool);
+}
+
+static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t tree, ngx_pool_t *pool, ngx_log_t *log){
+
+    ngx_http_upstream_main_conf_t  *umcf;
+    ngx_http_upstream_srv_conf_t	**uscfp;
+	ngx_str_t  *upstream_name;
+	ngx_http_upstream_degrade_rbtree_node_t *degrade_node;
+
+    ngx_uint_t 	i, hash;
+
+    umcf = ngx_http_get_module_main_conf(dmcf_global->ctx, ngx_http_upstream_module);
+    uscfp = umcf->upstreams.elts;
+
+    for (i = 0; i < umcf->upstreams.nelts; i++) {
+    	upstream_name = &uscfp[i]->host;
+		hash = ngx_crc32_long(upstream_name->data, upstream_name->len);
+		degrade_node = (ngx_http_upstream_degrade_rbtree_node_t*)ngx_str_rbtree_lookup(&tree, upstream_name, hash);
+		if(degrade_node){
+			continue;
+		}
+		degrade_node = ngx_pcalloc(pool, sizeof(ngx_http_upstream_degrade_rbtree_node_t));
+		if(degrade_node == NULL){
+			ngx_log_error(NGX_LOG_ERR, log, 0 ,"[ngx_http_upstream_degrade_add_unchecked_pools]not enough memory.");
+			return NGX_ERROR;
+		}
+		degrade_node->str = *upstream_name;
+		degrade_node->node.key = hash;
+		degrade_node->upstream_checked = 0;
+		//unchecked
+		degrade_node->server_count = uscfp[i]->servers->nelts;
+		degrade_node->degrate_up_count = uscfp[i]->servers->nelts;
+		ngx_rbtree_insert(&tree, (ngx_rbtree_node_t *)degrade_node);
+    }
+
 }
 
 
@@ -437,8 +478,12 @@ static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf){
 
 	for(i=0; i<dshm->upstream_count;i++){
 
-		buf->last = ngx_slprintf(buf->last, buf->end, "%V,%ui,%ui,%ui\n",
-				&dshm->uds[i].upstream_name, dshm->uds[i].degrate_state, dshm->uds[i].server_count, dshm->uds[i].degrate_up_count);
+		buf->last = ngx_slprintf(buf->last, buf->end, "%V,%s,%ui,%ui,%ui\n",
+				&dshm->uds[i].upstream_name,
+				dshm->uds[i].upstream_checked ? "checked" : "unchecked",
+				dshm->uds[i].degrate_state,
+				dshm->uds[i].server_count,
+				dshm->uds[i].degrate_up_count);
 	}
 }
 

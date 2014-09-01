@@ -287,8 +287,6 @@ static int get_ngx_http_variable(lua_State *L) {
 	ngx_uint_t hash;
 	ngx_str_t name;
 	ngx_http_variable_value_t *vv;
-	ngx_list_t *headers;
-	ngx_table_elt_t* elt;
 	ngx_http_dypp_loc_conf_t *hdlc;
 	ngx_str_t dypp_key;
 	//	p = (u_char*)lua_tolstring(L, 1, &len);
@@ -338,11 +336,11 @@ typedef struct {
 static int get_upstream_list(lua_State *L) {
 
 	ngx_http_upstream_degrades_shm_t	*udshm = dmcf_global->udshm;
-	ngx_int_t 	i, backup = -1, exact = -1, count = 0;
+	ngx_uint_t  i;
+	ngx_int_t 	backup = -1, exact = -1, count = 0;
 	u_char		use_backup = 0;
 	ngx_http_upstream_degrade_shm_t * degrade = udshm->uds;
 	ngx_str_t *upstream_name;
-	u_char *temp_name;
 	ngx_array_t	*upstreams;
 	ngx_http_dypp_upstream_helper *temp;
 	ngx_log_t *log = cur_r->pool->log;
@@ -362,13 +360,13 @@ static int get_upstream_list(lua_State *L) {
 
 			if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, upstream_name->len) == 0) {
 				exact = count;
-				ngx_log_error(NGX_LOG_NOTICE, log, 0, "[get_upstream_list]found exact: %ui", exact);
+				ngx_log_error(NGX_LOG_INFO, log, 0, "[get_upstream_list]found exact: %ui", exact);
 			}else if(upstream_name->data[cur_dp_domain->len] == '@') {
 				if(upstream_name->len == cur_dp_domain->len + UPSTREA_DEGRATE_BACKUP_NAME_LENGTH + 1){
 					if(ngx_strncmp(&upstream_name->data[cur_dp_domain->len + 1], UPSTREA_DEGRATE_BACKUP_NAME, UPSTREA_DEGRATE_BACKUP_NAME_LENGTH) == 0){
 						//backup
 						backup = count;
-						ngx_log_error(NGX_LOG_NOTICE, log, 0, "[get_upstream_list]found backup: %ui", backup);
+						ngx_log_error(NGX_LOG_INFO, log, 0, "[get_upstream_list]found backup: %ui", backup);
 					}
 				}
 			}
@@ -398,10 +396,10 @@ static int get_upstream_list(lua_State *L) {
     count = 0;
     for(i=0 ; i<upstreams->nelts ;i++){
 
-    	if( i == exact && use_backup){
+    	if( (ngx_int_t)i == exact && use_backup){
     		continue;
     	}
-    	if( i == backup && !use_backup){
+    	if( (ngx_int_t)i == backup && !use_backup){
     		continue;
     	}
     	lua_pushlstring(L, (char*)temp[i].upstream_name.data, temp[i].upstream_name.len);

@@ -37,12 +37,18 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *ev);
 //如果pool可用比例降到一定比例，则切换到backup
 
 typedef struct {
+	/**
+	 * 不能在node之前加入成员
+	 */
     ngx_rbtree_node_t         node;
     ngx_str_t                 str;//upstream name
 
     ngx_uint_t				  server_count;
     ngx_uint_t 				  degrate_up_count;
     ngx_uint_t				  degrade_rate;
+
+    //此upstream是否配置健康监测
+    u_char				  		upstream_checked;
 
 } ngx_http_upstream_degrade_rbtree_node_t;
 
@@ -61,6 +67,8 @@ typedef struct {
 
 	ngx_uint_t	server_count;
 
+    //此upstream是否配置健康监测
+    u_char				  		upstream_checked;
 } ngx_http_upstream_degrade_shm_t;
 
 typedef struct {
@@ -86,6 +94,8 @@ typedef struct {
 	ngx_uint_t static_upstream_size;
 
 	ngx_http_upstream_degrades_shm_t *udshm;
+
+	ngx_http_conf_ctx_t  *ctx;
 
 } ngx_http_dypp_main_conf_t;
 
