@@ -13,6 +13,8 @@ static ngx_int_t ngx_http_dypp_get_shm_name(ngx_str_t *shm_name, ngx_pool_t *poo
     ngx_uint_t generation);
 static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf);
 static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t tree, ngx_pool_t *pool, ngx_log_t *log);
+static ngx_int_t ngx_http_upstream_degrade_need_exit();
+
 void *
 ngx_http_dypp_create_main_conf(ngx_conf_t *cf)
 {
@@ -259,7 +261,7 @@ ngx_http_dypp_add_timers(ngx_cycle_t *cycle){
 
 	ngx_log_error(NGX_LOG_NOTICE, event->log, 0, "add timer %M", t);
 
-	ngx_event_add_timer(event, t);
+//	ngx_event_add_timer(event, t);
     return NGX_OK;
 }
 
@@ -336,6 +338,12 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 	peer = peers->peers.elts;
 	ngx_rbtree_t tree;
 	ngx_rbtree_node_t sentinel;
+
+
+	if(ngx_http_upstream_degrade_need_exit()){
+		ngx_log_error(NGX_LOG_NOTICE, ngx_cycle->log, 0, "[ngx_http_upstream_degrade_timer]exit");
+		return;
+	}
 
 	pool = ngx_create_pool(512, event->log);
 
@@ -524,3 +532,12 @@ ngx_http_upstream_degrade_interface(ngx_conf_t *cf, ngx_command_t *cmd, void *co
     return NGX_CONF_OK;
 }
 
+static ngx_int_t
+ngx_http_upstream_degrade_need_exit()
+{
+    if (ngx_terminate || ngx_exiting || ngx_quit) {
+        return 1;
+    }
+
+    return 0;
+}
