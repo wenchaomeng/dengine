@@ -486,14 +486,23 @@ static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf){
 	ngx_http_upstream_degrades_shm_t *dshm = dmcf_global->udshm;
 	ngx_uint_t i;
 
+	buf->last = ngx_slprintf(buf->last, buf->end, "%s,%s,%s,%s,%s, %s\n",
+			"UPSTREAM_NAME",
+			"IS_CHECKED",
+			"DEGRADE_STATE",
+			"SERVER_COUNT",
+			"UP_COUNT",
+			"DEGRADE_RATE");
+
 	for(i=0; i<dshm->upstream_count;i++){
 
-		buf->last = ngx_slprintf(buf->last, buf->end, "%V,%s,%ui,%ui,%ui\n",
+		buf->last = ngx_slprintf(buf->last, buf->end, "%V,%s,%ui,%ui,%ui, %ui%%\n",
 				&dshm->uds[i].upstream_name,
 				dshm->uds[i].upstream_checked ? "checked" : "unchecked",
 				dshm->uds[i].degrate_state,
 				dshm->uds[i].server_count,
-				dshm->uds[i].degrate_up_count);
+				dshm->uds[i].degrate_up_count,
+				dshm->uds[i].degrade_rate);
 	}
 }
 
