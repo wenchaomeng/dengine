@@ -58,15 +58,18 @@ char * ngx_http_dypp_set_degrade_rate(ngx_conf_t *cf, ngx_command_t *cmd, void *
 
     ngx_http_dypp_srv_conf_t  *dscf = conf;
     ngx_str_t	*value = cf->args->elts;
-
+    ngx_int_t 	rate;
 
     if(cf->args->nelts != 2){
 
     	return " dypp_degrade_rate should have one and only one parameter.";
     }
 
-    dscf->degrade_rate = ngx_atoi(value[1].data, value[1].len);
-
+    rate = ngx_atoi(value[1].data, value[1].len);
+    if(rate < 0 || rate > 100){
+    	return "upstream_degrade_rate should between 0 and 100";
+    }
+    dscf->degrade_rate = rate;
 	ngx_log_error(NGX_LOG_NOTICE, ngx_cycle->log, 0, " dypp_rate_rate: %ui", dscf->degrade_rate);
 
 
