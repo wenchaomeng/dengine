@@ -405,6 +405,14 @@ static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t tree
     uscfp = umcf->upstreams.elts;
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {
+
+    	if(uscfp[i]->servers == NULL){
+    		/**
+    		 * like proxy_pass http://www.baidu.com
+    		 */
+    		continue;
+
+    	}
     	upstream_name = &uscfp[i]->host;
 		hash = ngx_crc32_long(upstream_name->data, upstream_name->len);
 		degrade_node = (ngx_http_upstream_degrade_rbtree_node_t*)ngx_str_rbtree_lookup(&tree, upstream_name, hash);
@@ -420,6 +428,7 @@ static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t tree
 		degrade_node->node.key = hash;
 		degrade_node->upstream_checked = 0;
 		//unchecked
+
 		degrade_node->server_count = uscfp[i]->servers->nelts;
 		degrade_node->degrate_up_count = uscfp[i]->servers->nelts;
 		ngx_rbtree_insert(&tree, (ngx_rbtree_node_t *)degrade_node);
