@@ -338,7 +338,7 @@ static int get_upstream_list(lua_State *L) {
 	ngx_http_upstream_degrades_shm_t	*udshm = dmcf_global->udshm;
 	ngx_uint_t  i;
 	ngx_int_t 	backup = -1, exact = -1, count = 0;
-	u_char		use_backup = 0;
+	u_char		use_backup = 0, is_upstream_add;
 	ngx_http_upstream_degrade_shm_t * degrade = udshm->uds;
 	ngx_str_t *upstream_name;
 	ngx_array_t	*upstreams;
@@ -351,24 +351,39 @@ static int get_upstream_list(lua_State *L) {
 		goto fail;
 	}
 
-	ngx_shmtx_lock(&udshm->mutex);
-
 	for( i=0 ; i<udshm->upstream_count; i++){
 
+		if(degrade[i].deleted){
+			continue;
+		}
+
 		upstream_name = &degrade[i].upstream_name;
+
 		if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, cur_dp_domain->len) == 0) {
 
+			is_upstream_add = 0;
 			if(ngx_strncmp(upstream_name->data, cur_dp_domain->data, upstream_name->len) == 0) {
 				exact = count;
+				is_upstream_add = 1;
 				ngx_log_error(NGX_LOG_INFO, log, 0, "[get_upstream_list]found exact: %ui", exact);
-			}else if(upstream_name->data[cur_dp_domain->len] == '@') {
+			}else if(upstream_name->data[cur_dp_domain->len] == '#') {
+				//ab test
 				if(upstream_name->len == cur_dp_domain->len + UPSTREA_DEGRATE_BACKUP_NAME_LENGTH + 1){
 					if(ngx_strncmp(&upstream_name->data[cur_dp_domain->len + 1], UPSTREA_DEGRATE_BACKUP_NAME, UPSTREA_DEGRATE_BACKUP_NAME_LENGTH) == 0){
 						//backup
 						backup = count;
+						is_upstream_add = 1;
 						ngx_log_error(NGX_LOG_INFO, log, 0, "[get_upstream_list]found backup: %ui", backup);
 					}
 				}
+			}else if(upstream_name->data[cur_dp_domain->len] == '@'){
+				//ab test
+				is_upstream_add = 1;
+			}
+
+			if(!is_upstream_add){
+				//名字前缀相同，但不代表特殊含义
+				continue;
 			}
 			temp = ngx_array_push(upstreams);
 			temp->upstream_name.data = ngx_palloc(cur_r->pool, upstream_name->len);
@@ -383,8 +398,11 @@ static int get_upstream_list(lua_State *L) {
 			count++;
 		}
 	}
-    ngx_shmtx_unlock(&udshm->mutex);
 
+	if(count == 0){
+		ngx_log_error(NGX_LOG_ERR, log, 0, "[get_upstream_list]find none upstreams for %V!!", cur_dp_domain);
+		goto fail;
+	}
 
     temp = upstreams->elts;
     if(backup != -1 && exact != -1 && !temp[exact].degrate_state && temp[backup].degrate_up_count > 0){

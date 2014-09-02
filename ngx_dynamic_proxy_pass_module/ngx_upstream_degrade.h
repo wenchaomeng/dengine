@@ -36,24 +36,29 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *ev);
 //proxy_pass pool@BACKUP
 //如果pool可用比例降到一定比例，则切换到backup
 
-typedef struct {
-	/**
-	 * 不能在node之前加入成员
-	 */
-    ngx_rbtree_node_t         node;
-    ngx_str_t                 str;//upstream name
-
-    ngx_uint_t				  server_count;
-    ngx_uint_t 				  degrate_up_count;
-    ngx_uint_t				  degrade_rate;
-
-    //此upstream是否配置健康监测
-    u_char				  		upstream_checked;
-
-} ngx_http_upstream_degrade_rbtree_node_t;
+//typedef struct {
+//	/**
+//	 * 不能在node之前加入成员
+//	 */
+//    ngx_rbtree_node_t         node;
+//    ngx_str_t                 str;//upstream name
+//
+//    ngx_uint_t				  server_count;
+//    ngx_uint_t 				  degrate_up_count;
+//    ngx_uint_t				  degrade_rate;
+//
+//    //此upstream是否配置健康监测
+//    u_char				  		upstream_checked;
+//
+//} ngx_http_upstream_degrade_rbtree_node_t;
 
 typedef struct {
 	
+    ngx_rbtree_node_t         node;
+    ngx_str_t                 str;//upstream name，作为rbtree的节点
+
+    u_char	deleted;
+
 	ngx_str_t  upstream_name;
 	/**
 	 * 如果比例大于等于rate，则正常 1
@@ -73,11 +78,13 @@ typedef struct {
 
 typedef struct {
 
-	ngx_uint_t  					generation;
-    ngx_shmtx_t                     mutex;
-    ngx_shmtx_sh_t                  lock;
-    ngx_uint_t 						upstream_count;
+	ngx_uint_t  		generation;
+    ngx_shmtx_t         mutex;
+    ngx_shmtx_sh_t      lock;
+    ngx_uint_t 			upstream_count;
 
+    ngx_rbtree_t 		tree;
+    ngx_rbtree_node_t	sentinel;
 	ngx_http_upstream_degrade_shm_t uds[1];
 } ngx_http_upstream_degrades_shm_t;
 
