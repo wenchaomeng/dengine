@@ -6,6 +6,7 @@ A nginx module which supports dynamic proxy_pass
 
 
 降级配置选项：
+
 	Syntax:	upstream_degrade_rate 比率
 	Default: 60
 	Context:	http, upstream
