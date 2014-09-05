@@ -106,14 +106,14 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		NULL
 	},
 
-    { ngx_string("upstream_degrate_shm_size"),
+    { ngx_string("upstream_degrade_shm_size"),
       NGX_HTTP_MAIN_CONF|NGX_CONF_TAKE1,
       ngx_http_dypp_degrade_shm_size,
       0,
       0,
       NULL },
 
-      { ngx_string("upstream_degrate_interface"),
+      { ngx_string("upstream_degrade_interface"),
     	NGX_HTTP_LOC_CONF|NGX_CONF_NOARGS,
     	ngx_http_upstream_degrade_interface,
         0,
