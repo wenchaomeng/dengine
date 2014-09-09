@@ -303,6 +303,8 @@ void ngx_http_upstream_degrade_update_shm_tree(ngx_http_upstream_degrades_shm_t 
 		}else{
 			//delete it
 			degrade[i].deleted = 1;
+			degrade[i].upstream_name.len=0;
+			degrade[i].str.len=0;
 			ngx_rbtree_delete(&udshm->tree, (ngx_rbtree_node_t*)&degrade[i]);
 			ngx_slab_free(dmcf_global->shpool, degrade[i].upstream_name.data);
 		}
