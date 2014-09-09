@@ -303,10 +303,10 @@ void ngx_http_upstream_degrade_update_shm_tree(ngx_http_upstream_degrades_shm_t 
 		}else{
 			//delete it
 			degrade[i].deleted = 1;
-			degrade[i].upstream_name.len=0;
-			degrade[i].str.len=0;
 			ngx_rbtree_delete(&udshm->tree, (ngx_rbtree_node_t*)&degrade[i]);
-			ngx_slab_free(dmcf_global->shpool, degrade[i].upstream_name.data);
+			degrade[i].upstream_name.len=0;
+			degrade[i].str.len = 0;
+			ngx_slab_free_locked(dmcf_global->shpool, degrade[i].upstream_name.data);
 		}
 	}
 }
@@ -341,7 +341,7 @@ ngx_int_t ngx_http_upstream_degrade_set_shm_node(ngx_http_upstream_degrade_shm_t
 
 	ngx_http_upstream_degrade_copy_value(&degrade[i], src);
 
-	buff = ngx_slab_alloc(dmcf->shpool, src->upstream_name.len);
+	buff = ngx_slab_alloc_locked(dmcf->shpool, src->upstream_name.len);
 	if(buff == NULL){
 		ngx_log_error(NGX_LOG_ERR, log, 0, "[ngx_http_upstream_degrade_add_shm_tree]not enough shm memory!!");
 		return NGX_ERROR;
