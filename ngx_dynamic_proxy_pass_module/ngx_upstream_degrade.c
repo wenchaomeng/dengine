@@ -420,7 +420,7 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 	ngx_http_upstream_check_peer_t *peer;
 	ngx_http_dypp_main_conf_t 	*dmcf = dmcf_global;
 	ngx_http_dypp_srv_conf_t 	*dscf;
-	ngx_uint_t  i, hash, count;
+	ngx_uint_t  i, hash;
 	ngx_pool_t *pool;
 	ngx_str_t  *upstream_name;
 	ngx_http_upstream_degrade_shm_t *degrade_node;
