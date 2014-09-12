@@ -252,7 +252,7 @@ ngx_http_dypp_add_timers(ngx_cycle_t *cycle){
     	return NGX_ERROR;
     }
     //初始随机化，防止拥堵
-    delay = dmcf->degrade_interval > 1000 ? dmcf->degrade_interval : 1000;
+    delay = 100;
 	t = ngx_random() % delay;
 
 
@@ -353,6 +353,8 @@ ngx_int_t ngx_http_upstream_degrade_set_shm_node(ngx_http_upstream_degrade_shm_t
 
 	degrade[i].str = degrade[i].upstream_name;
 
+	degrade[i].force_state = UPSTREAM_DEGRADE_FORCE_AUTO;
+
 	degrade[i].node.key = ngx_crc32_long(src->upstream_name.data, src->upstream_name.len);
 
 	ngx_rbtree_insert(&udshm->tree, (ngx_rbtree_node_t *)&degrade[i]);
@@ -436,7 +438,11 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 	}
 
 	pool = ngx_create_pool(512, event->log);
-
+	if(pool == NULL){
+		ngx_event_add_timer(event, dmcf_global->degrade_interval);
+		ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0, "[ngx_http_upstream_degrade_timer]no memory left");
+		return;
+	}
 
 	//计算
 	ngx_rbtree_init(&tree, &sentinel, ngx_str_rbtree_insert_value);
@@ -489,8 +495,8 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 
 
 fail:
-	ngx_event_add_timer(event, dmcf_global->degrade_interval);
 	ngx_destroy_pool(pool);
+	ngx_event_add_timer(event, dmcf_global->degrade_interval);
 }
 
 static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t *tree, ngx_pool_t *pool, ngx_log_t *log){
@@ -546,6 +552,47 @@ static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t *tre
 }
 
 
+void ngx_http_upstream_degrade_force(ngx_int_t force_state, ngx_str_t arg, ngx_log_t *log, ngx_buf_t *buf){
+
+	ngx_http_dypp_main_conf_t 	*dmcf = dmcf_global;
+	ngx_http_upstream_degrade_shm_t  *degrade;
+	ngx_int_t i, hash;
+	u_char *start = arg.data, *end = arg.data + arg.len;
+	ngx_str_t upstream_name;
+
+
+    while(1){
+    	end = ngx_strlchr(start, arg.data + arg.len, ',');
+
+    	if(end == NULL){
+			upstream_name.len = arg.data + arg.len - start;
+    	}else{
+    		upstream_name.len = end - start;
+    	}
+
+    	upstream_name.data = start;
+    	hash = ngx_crc32_long(upstream_name.data, upstream_name.len);
+
+    	ngx_shmtx_lock(&dmcf->udshm->mutex);
+
+    	degrade = (ngx_http_upstream_degrade_shm_t  *)ngx_str_rbtree_lookup(&dmcf->udshm->tree, &upstream_name, hash);
+    	if(degrade != NULL){
+    		degrade->force_state = force_state;
+    	}else{
+    		ngx_log_error(NGX_LOG_WARN, log, 0, "[ngx_http_upstream_degrade_force][unfound upstream]%V", &upstream_name);
+    		buf->last = ngx_slprintf(buf->last, buf->end, "%V ", &upstream_name);
+    	}
+    	ngx_shmtx_unlock(&dmcf->udshm->mutex);
+
+    	start = end + 1;
+
+    	if(end == NULL){
+    		break;
+    	}
+    }
+
+}
+
 ngx_int_t ngx_http_upstream_degrade_interface_handler(ngx_http_request_t *r)
 {
     ngx_int_t       rc;
@@ -555,7 +602,7 @@ ngx_int_t ngx_http_upstream_degrade_interface_handler(ngx_http_request_t *r)
     ngx_chain_t 	chain;
     u_char 			detail;
 
-    if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD) {
+    if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD && r->method != NGX_HTTP_POST) {
         return NGX_HTTP_NOT_ALLOWED;
     }
 
@@ -566,7 +613,6 @@ ngx_int_t ngx_http_upstream_degrade_interface_handler(ngx_http_request_t *r)
     }
 
     size = dmcf_global->udshm->upstream_count * ngx_pagesize/4;
-
     buf = ngx_create_temp_buf(r->pool, size);
     if(buf == NULL){
     	return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -574,12 +620,45 @@ ngx_int_t ngx_http_upstream_degrade_interface_handler(ngx_http_request_t *r)
     chain.buf = buf;
     chain.next = NULL;
 
-    detail = ngx_strstr(r->uri.data, "detail") == NULL ? 0 : 1;
+    if(ngx_strncmp(r->uri.data, "/degrade/status", ngx_strlen("/degrade/status")) == 0){
+    	//get status
+        detail = ngx_strstr(r->uri.data, "detail") == NULL ? 0 : 1;
+        ngx_http_upstream_degrade_create_return_str(buf, detail);
+        r->headers_out.status = NGX_HTTP_OK;
 
-    ngx_http_upstream_degrade_create_return_str(buf, detail);
+    }else if(ngx_strncmp(r->uri.data, "/degrade/force", ngx_strlen("/degrade/force")) == 0){
+    	//强制降级或者升级
+    	ngx_int_t force_state = UPSTREAM_DEGRADE_FORCE_AUTO;
+
+    	if(ngx_strncmp(r->uri.data, "/degrade/force/up", ngx_strlen("/degrade/force/up")) == 0){
+    		force_state = UPSTREAM_DEGRADE_FORCE_UP;
+    	}else if(ngx_strncmp(r->uri.data, "/degrade/force/down", ngx_strlen("/degrade/force/down")) == 0){
+    		force_state = UPSTREAM_DEGRADE_FORCE_DOWN;
+    	}
+
+    	ngx_str_t arg;
+    	if(ngx_http_arg(r, (u_char*)"upstreams", ngx_strlen("upstreams"), &arg) != NGX_OK){
+            r->headers_out.status = NGX_HTTP_BAD_REQUEST;
+            buf->last = ngx_slprintf(buf->last, buf->end, "upstreams parameter not found!!");
+            goto return_message;
+    	}
+
+    	ngx_http_upstream_degrade_force(force_state, arg, r->pool->log, buf);
+
+    	if(buf->last == buf->pos){
+			r->header_only = 1;
+			r->headers_out.status = NGX_HTTP_OK;
+    	}else{
+			r->headers_out.status = NGX_HTTP_NOT_FOUND;
+    	}
+    }else{
+    	return NGX_HTTP_BAD_REQUEST;
+    }
+
+
+return_message :
+
     buf->last_buf = 1;
-
-    r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_type = type;
     r->headers_out.content_length_n = buf->last - buf->pos;
 
@@ -589,7 +668,6 @@ ngx_int_t ngx_http_upstream_degrade_interface_handler(ngx_http_request_t *r)
     }
 
     return ngx_http_output_filter(r, &chain);
-
 }
 
 static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf, u_char detail){
@@ -597,13 +675,14 @@ static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf, u_char d
 	ngx_http_upstream_degrades_shm_t *dshm = dmcf_global->udshm;
 	ngx_uint_t i;
 
-	buf->last = ngx_slprintf(buf->last, buf->end, "%s,%s,%s,%s,%s,%s",
+	buf->last = ngx_slprintf(buf->last, buf->end, "%s,%s,%s,%s,%s,%s,%s",
 			"UPSTREAM_NAME",
 			"IS_CHECKED",
 			"DEGRADE_STATE",
 			"SERVER_COUNT",
 			"UP_COUNT",
-			"DEGRADE_RATE");
+			"DEGRADE_RATE",
+			"FORCE_STATE");
 
 	if(detail){
 		buf->last = ngx_slprintf(buf->last, buf->end, ",%s",
@@ -620,13 +699,14 @@ static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf, u_char d
 			continue;
 		}
 
-		buf->last = ngx_slprintf(buf->last, buf->end, "%V,%s,%ui,%ui,%ui, %ui%%",
+		buf->last = ngx_slprintf(buf->last, buf->end, "%V,%s,%ui,%ui,%ui, %ui%%, %i",
 				&dshm->uds[i].upstream_name,
 				dshm->uds[i].upstream_checked ? "checked" : "unchecked",
 				dshm->uds[i].degrate_state,
 				dshm->uds[i].server_count,
 				dshm->uds[i].degrate_up_count,
-				dshm->uds[i].degrade_rate);
+				dshm->uds[i].degrade_rate,
+				dshm->uds[i].force_state);
 
 		if(detail){
 			buf->last = ngx_slprintf(buf->last, buf->end, ",%s",

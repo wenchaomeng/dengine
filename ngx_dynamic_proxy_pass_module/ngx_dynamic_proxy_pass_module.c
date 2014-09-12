@@ -331,6 +331,7 @@ typedef struct {
 	ngx_uint_t 	weight;
 	ngx_uint_t  degrate_state;
     ngx_uint_t 	degrate_up_count;
+    ngx_int_t 	force_state;
 } ngx_http_dypp_upstream_helper;
 
 static int get_upstream_list(lua_State *L) {
@@ -395,6 +396,7 @@ static int get_upstream_list(lua_State *L) {
 			temp->weight = degrade[i].server_count;
 			temp->degrate_up_count = degrade[i].degrate_up_count;
 			temp->degrate_state =degrade[i].degrate_state;
+			temp->force_state = degrade[i].force_state;
 			count++;
 		}
 	}
@@ -405,10 +407,23 @@ static int get_upstream_list(lua_State *L) {
 	}
 
     temp = upstreams->elts;
-    if(backup != -1 && exact != -1 && !temp[exact].degrate_state && temp[backup].degrate_up_count > 0){
-    	//降级
-		ngx_log_error(NGX_LOG_NOTICE, log, 0, "[get_upstream_list]degrade to: %V", &temp[backup].upstream_name);
-    	use_backup = 1;
+
+
+    if(temp[exact].force_state == UPSTREAM_DEGRADE_FORCE_DOWN){
+    	//强制降级
+    	if(backup != -1){
+    		use_backup = 1;
+    	}
+    }else if(temp[exact].force_state == UPSTREAM_DEGRADE_FORCE_UP){
+    	//强制升级
+    	use_backup = 0;
+    }else{
+    	//自动
+        if(backup != -1 && exact != -1 && !temp[exact].degrate_state && temp[backup].degrate_up_count > 0){
+        	//降级
+    		ngx_log_error(NGX_LOG_DEBUG, log, 0, "[get_upstream_list]degrade to: %V", &temp[backup].upstream_name);
+        	use_backup = 1;
+        }
     }
 
     count = 0;

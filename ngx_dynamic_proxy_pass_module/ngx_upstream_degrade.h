@@ -7,9 +7,9 @@
 
 #define UPSTREA_DEGRATE_DEFAULT_RATE 60
 
-#define UPSTREAM_DEGRADE_FORCE_ON_LINE 1
-#define UPSTREAM_DEGRADE_FORCE_OFF_LINE -1
-#define UPSTREAM_DEGRADE_FORCE_NORMAL 0
+#define UPSTREAM_DEGRADE_FORCE_UP 1
+#define UPSTREAM_DEGRADE_FORCE_DOWN -1
+#define UPSTREAM_DEGRADE_FORCE_AUTO 0
 
 #define UPSTREAM_DEGRADE_STATE_ON 1
 #define UPSTREAM_DEGRADE_STATE_OFF 0
@@ -36,28 +36,17 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *ev);
 //proxy_pass pool@BACKUP
 //如果pool可用比例降到一定比例，则切换到backup
 
-//typedef struct {
-//	/**
-//	 * 不能在node之前加入成员
-//	 */
-//    ngx_rbtree_node_t         node;
-//    ngx_str_t                 str;//upstream name
-//
-//    ngx_uint_t				  server_count;
-//    ngx_uint_t 				  degrate_up_count;
-//    ngx_uint_t				  degrade_rate;
-//
-//    //此upstream是否配置健康监测
-//    u_char				  		upstream_checked;
-//
-//} ngx_http_upstream_degrade_rbtree_node_t;
-
 typedef struct {
 	
     ngx_rbtree_node_t         node;
     ngx_str_t                 str;//upstream name，作为rbtree的节点
 
     u_char	deleted;
+
+    /**
+     * 支持强制升级、降级、自动三种模式，默认自动
+     */
+    ngx_int_t force_state;
 
 	ngx_str_t  upstream_name;
 	/**
