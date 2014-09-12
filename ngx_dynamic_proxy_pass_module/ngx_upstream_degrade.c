@@ -373,7 +373,7 @@ ngx_int_t ngx_http_upstream_degrade_add_shm_tree(ngx_rbtree_t tree, ngx_pool_t *
 	ngx_http_upstream_degrade_shm_t **add_shm, *degrade, *src;
 
 	//找到需要新增的节点
-	added = ngx_array_create(pool, udshm->upstream_count, sizeof(ngx_http_upstream_degrades_shm_t*));
+	added = ngx_array_create(pool, dmcf_global->static_upstream_size == 0 ? 512 : dmcf_global->static_upstream_size, sizeof(ngx_http_upstream_degrades_shm_t*));
 	ngx_http_upstream_find_add_shm_nodes(tree.root, tree.sentinel, &udshm->tree, added);
 
 	if(added->nelts == 0){
