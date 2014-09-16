@@ -556,7 +556,7 @@ void ngx_http_upstream_degrade_force(ngx_int_t force_state, ngx_str_t arg, ngx_l
 
 	ngx_http_dypp_main_conf_t 	*dmcf = dmcf_global;
 	ngx_http_upstream_degrade_shm_t  *degrade;
-	ngx_int_t i, hash;
+	ngx_int_t hash;
 	u_char *start = arg.data, *end = arg.data + arg.len;
 	ngx_str_t upstream_name;
 
