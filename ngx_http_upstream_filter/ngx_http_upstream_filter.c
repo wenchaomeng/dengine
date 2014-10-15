@@ -165,7 +165,7 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
 
     ngx_http_upstream_main_conf_t  *umcf;
 	ngx_http_upstream_filter_srv_conf_t *parent, *child;
-    ngx_http_upstream_srv_conf_t   *uscf, **uscfp;
+    ngx_http_upstream_srv_conf_t   **uscfp;
     ngx_uint_t i, j;
     ngx_str_t *parent_pattern;
     ngx_http_upstream_filter_config  *usfc_child;
@@ -324,7 +324,7 @@ char *
 ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 
 	ngx_http_upstream_filter_srv_conf_t *usfscf = conf;
-	ngx_str_t url_pattern, keyname, server_url, *args;
+	ngx_str_t *args;
 	ngx_http_upstream_filter_config_type type;
 	ngx_http_upstream_filter_config *usfc;
 	ngx_uint_t i;
@@ -620,7 +620,7 @@ ngx_http_upstream_filter_read_handler(ngx_event_t *ev)
 
 		ngx_str_t *result = ngx_palloc(r->pool, regex_rc);
 
-		for(i=0;i<regex_rc;i++){
+		for(i=0; i<(ngx_uint_t)regex_rc ;i++){
 			result[i].data = buf->pos + capture[2*i];
 			result[i].len = capture[2*i + 1] - capture[2*i];
 		}
@@ -647,7 +647,6 @@ ngx_http_upstream_filter_write_handler(ngx_event_t *ev)
 	ngx_http_upstream_filter_config *usfc = data->usfc;
 	ngx_http_upstream_filter_srv_conf_t *usfscf = data->usfscf;
 	ngx_http_request_t *r = data->r;
-	ngx_str_t value;
 	ngx_url_t url = usfc->url;
 	char *error_message;
 
