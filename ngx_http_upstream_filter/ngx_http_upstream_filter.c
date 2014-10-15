@@ -178,7 +178,7 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
     uscfp = umcf->upstreams.elts;
     for( i=0 ; i < umcf->upstreams.nelts ; i++ ){
 
-    	if(uscfp[i]->servers == NULL){
+    	if(uscfp[i]->srv_conf == NULL){
     		//like proxy_pass http://www.baidu.com
     		continue;
     	}
@@ -985,8 +985,8 @@ void ngx_http_upstream_filter_upstream_init_mock(ngx_http_request_t *r){
 	}
 
 	upstream = r->upstream->conf->upstream;
-	if(upstream->servers == NULL){
-		ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_upstream_init_mock][servers_null]");
+	if(upstream->srv_conf == NULL){
+		ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_upstream_init_mock][srv_conf_null]");
 		goto next;
 	}
 
