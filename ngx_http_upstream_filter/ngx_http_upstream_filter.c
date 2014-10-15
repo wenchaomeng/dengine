@@ -105,7 +105,7 @@ void * ngx_http_upstream_filter_create_srv_conf(ngx_conf_t *cf){
 
 	ngx_http_upstream_filter_srv_conf_t *ufscf;
 	ngx_http_upstream_filter_srv_conf_t *parent;
-	ngx_int_t i;
+	ngx_uint_t i;
 
 	ufscf = ngx_palloc(cf->pool, sizeof(ngx_http_upstream_filter_srv_conf_t));
 	if(ufscf == NULL){
@@ -140,7 +140,7 @@ void * ngx_http_upstream_filter_create_srv_conf(ngx_conf_t *cf){
 static void ngx_http_upstream_filter_merge_config(ngx_http_upstream_filter_srv_conf_t *parent,
 		ngx_http_upstream_filter_srv_conf_t *child, ngx_conf_t *cf){
 
-	ngx_int_t i, j;
+	ngx_uint_t i, j;
 	ngx_http_upstream_filter_config *usfc_parent, *usfc_child, *usfc_add;
 
 	usfc_parent = parent->upstream_filter_config->elts;
@@ -166,7 +166,7 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
     ngx_http_upstream_main_conf_t  *umcf;
 	ngx_http_upstream_filter_srv_conf_t *parent, *child;
     ngx_http_upstream_srv_conf_t   *uscf, **uscfp;
-    ngx_int_t i, j;
+    ngx_uint_t i, j;
     ngx_str_t *parent_pattern;
     ngx_http_upstream_filter_config  *usfc_child;
 
@@ -327,7 +327,7 @@ ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 	ngx_str_t url_pattern, keyname, server_url, *args;
 	ngx_http_upstream_filter_config_type type;
 	ngx_http_upstream_filter_config *usfc;
-	ngx_int_t i;
+	ngx_uint_t i;
 	char *result;
 
 	args = cf->args->elts;
@@ -368,7 +368,7 @@ ngx_conf_set_auth_filter_config_off(ngx_conf_t *cf, ngx_command_t *cmd, void *co
 	ngx_http_upstream_filter_config_type type;
 	ngx_http_upstream_filter_config *usfc;
 	ngx_str_t 	*args;
-	ngx_int_t i, found;
+	ngx_uint_t i, found;
 	char *result;
 
 	args = cf->args->elts;
@@ -441,7 +441,8 @@ ngx_conf_set_auth_filter_config_timeout(ngx_conf_t *cf, ngx_command_t *cmd, void
 	ngx_http_upstream_filter_config_type type;
 	ngx_http_upstream_filter_config *usfc;
 	ngx_str_t 	*args;
-	ngx_int_t i, found, timeout;
+	ngx_uint_t i, found;
+	ngx_int_t 	timeout;
 	char *result;
 
 	args = cf->args->elts;
@@ -588,7 +589,9 @@ ngx_http_upstream_filter_read_handler(ngx_event_t *ev)
 
 	int capture[DEFAULT_BODY_FILTER_CAPTUR_SIZE];
 	ngx_str_t received;
-	ngx_int_t regex_rc, i, finished = 0;
+	ngx_int_t regex_rc, finished = 0;
+	ngx_uint_t i;
+
 	received.data = buf->pos;
 	received.len = buf->last - buf->pos;
 
@@ -877,7 +880,7 @@ void ngx_http_upstream_filter_begin_ssl(ngx_http_upstream_filter_config *usfc, n
 
 ngx_str_t ngx_http_upstream_filter_find_key_value(ngx_http_upstream_filter_config *usfc, ngx_http_request_t *r){
 	ngx_list_part_t *part;
-	ngx_int_t i;
+	ngx_uint_t i;
 	ngx_table_elt_t *headers;
 	ngx_str_t value = ngx_null_string;
 	//send request
@@ -971,7 +974,7 @@ void ngx_http_upstream_filter_upstream_init_mock(ngx_http_request_t *r){
 
     ngx_http_upstream_srv_conf_t    *upstream;
     ngx_http_upstream_filter_srv_conf_t *usfscf;
-    ngx_int_t  i;
+    ngx_uint_t  i;
     ngx_str_t url;
     ngx_regex_compile_t  *pass_pattern;
     ngx_http_upstream_filter_config *usfc;
