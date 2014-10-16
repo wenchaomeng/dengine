@@ -577,10 +577,12 @@ ngx_http_upstream_filter_read_handler(ngx_event_t *ev)
 		}
 		if(size == 0){
 			//remote closed
+			ngx_log_error(NGX_LOG_INFO, ev->log, 0, "[ngx_http_upstream_filter_read_handler][remote closed]");
 			data->closed = 1;
 			break;
 		}
 		if(size == NGX_AGAIN){
+			ngx_log_error(NGX_LOG_INFO, ev->log, 0, "[ngx_http_upstream_filter_read_handler][again]");
 			break;
 		}
 		error_message = "read error";
@@ -699,6 +701,11 @@ void ngx_http_upstream_filter_send_request(ngx_http_upstream_filter_connection_d
 							"Host: %V\r\n"
 							"\r\n\r\n", real_url, &url.host);
 		data->write_buf = buf;
+	}
+
+	if(buf->pos == buf->last){
+		ngx_log_error(NGX_LOG_INFO, c->log, 0, "[ngx_http_upstream_filter_send_request][already finished]");
+		return;
 	}
 
 	ssize_t size ;
