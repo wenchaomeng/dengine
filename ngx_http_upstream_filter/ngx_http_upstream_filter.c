@@ -807,8 +807,8 @@ ngx_int_t ngx_http_upstream_filter_init_ssl(ngx_http_upstream_filter_config  *us
     usfc->ssl->log = cf->log;
 
     if (ngx_ssl_create(usfc->ssl,
-                       NGX_SSL_SSLv2|NGX_SSL_SSLv3|NGX_SSL_TLSv1
-                                    |NGX_SSL_TLSv1_1|NGX_SSL_TLSv1_2,
+                       NGX_SSL_SSLv2|NGX_SSL_TLSv1
+                                    |NGX_SSL_TLSv1_1,
                        NULL)
         != NGX_OK)
     {
@@ -951,6 +951,7 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 		ngx_http_upstream_filter_exception(r, pc->connection, usfscf, "alloc connection_data error");
 		return;
 	}
+	ngx_memset(data, 0, sizeof(ngx_http_upstream_filter_connection_data));
 	data->r = r;
 	data->usfc = usfc;
 	data->value = value;
