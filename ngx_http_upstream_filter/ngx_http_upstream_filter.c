@@ -43,20 +43,20 @@ static ngx_command_t ngx_http_upstream_filter_commands[] = {
 	    NULL
 	 },
 	{
-			ngx_string("auth_filter_config_off"), // The command name
-		    NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
-		    ngx_conf_set_auth_filter_config_off, // The command handler
-		    NGX_HTTP_SRV_CONF_OFFSET,
-		    0,
-		    NULL
+		ngx_string("auth_filter_config_off"), // The command name
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
+		ngx_conf_set_auth_filter_config_off, // The command handler
+		NGX_HTTP_SRV_CONF_OFFSET,
+		0,
+		NULL
 	},
 	{
-			ngx_string("auth_filter_config_timeout"), // The command name
-		    NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE2,
-		    ngx_conf_set_auth_filter_config_timeout, // The command handler
-		    NGX_HTTP_SRV_CONF_OFFSET,
-		    0,
-		    NULL
+		ngx_string("auth_filter_config_timeout"), // The command name
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE2,
+		ngx_conf_set_auth_filter_config_timeout, // The command handler
+		NGX_HTTP_SRV_CONF_OFFSET,
+		0,
+		NULL
 	}
 
 };
@@ -852,6 +852,8 @@ void ngx_http_upstream_filter_begin_ssl(ngx_http_upstream_filter_config *usfc, n
 
 	ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_begin_ssl]");
 
+	ngx_add_timer(c->write, usfc->timeout);
+
     if(usfc->ssl != NULL){
 
         if (ngx_ssl_create_connection(usfc->ssl, c,
@@ -961,7 +963,7 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 	c->pool = r->pool;
 
     if(rc == NGX_AGAIN){
-		ngx_add_timer(c->write, usfc->timeout);
+    	ngx_add_timer(c->write, usfc->timeout);
     	return;
     }
 
