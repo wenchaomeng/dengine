@@ -707,7 +707,7 @@ void ngx_http_upstream_filter_send_request(ngx_http_upstream_filter_connection_d
 
 	ngx_http_request_t  *r = data->r;
 	ngx_url_t	url = data->usfc->url;
-	ngx_str_t value = data->value;
+	ngx_str_t value = data->value, temp;
 	ngx_http_upstream_filter_config *usfc = data->usfc;
 	ngx_http_upstream_filter_srv_conf_t *usfscf = data->usfscf;
 	char *error_message;
@@ -718,15 +718,15 @@ void ngx_http_upstream_filter_send_request(ngx_http_upstream_filter_connection_d
 
 	if(buf == NULL){
 		u_char *real_url = ngx_palloc(r->pool, DEFAULT_MAX_URL_LENGTH);
-
-		ngx_snprintf(real_url, DEFAULT_MAX_URL_LENGTH, (const char*)url.uri.data, &value);
-
+		u_char *last = ngx_snprintf(real_url, DEFAULT_MAX_URL_LENGTH, (const char*)url.uri.data, &value);
+		temp.data = real_url;
+		temp.len = last - real_url;
 		buf = ngx_create_temp_buf(r->pool, DEFAULT_MAX_REQUEST_DATA_LENGTH);
 		buf->last = ngx_slprintf(buf->last, buf->end,
-							"GET %s  HTTP/1.1\r\n"
+							"GET %V  HTTP/1.1\r\n"
 							"Host: %V\r\n"
 							"Accept: */*\r\n"
-							"\r\n\r\n", real_url
+							"\r\n\r\n", &temp
 							, &url.host
 							);
 		data->write_buf = buf;
