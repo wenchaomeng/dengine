@@ -170,10 +170,13 @@ static void ngx_http_upstream_filter_merge_config(ngx_http_upstream_filter_srv_c
 		}
 	}
 }
-ngx_int_t ngx_http_upstream_filter_ngx_regex_compile(ngx_regex_compile_t *regex){
+ngx_int_t ngx_http_upstream_filter_ngx_regex_compile(ngx_regex_compile_t *regex, ngx_str_t pattern, ngx_pool_t *pool){
 	u_char error[NGX_MAX_CONF_ERRSTR];
 	ngx_int_t rc;
 
+	ngx_memset(regex, 0, sizeof(ngx_regex_compile_t));
+	regex->pattern = pattern;
+	regex->pool = pool;
 	regex->err.data = error;
 	regex->err.len = NGX_MAX_CONF_ERRSTR;
 
@@ -218,15 +221,11 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
     }
 
 
-    content_length_regex.pattern = content_length_pattern;
-    content_length_regex.pool = cf->pool;
-    if(ngx_http_upstream_filter_ngx_regex_compile(&content_length_regex) != NGX_OK){
+    if(ngx_http_upstream_filter_ngx_regex_compile(&content_length_regex, content_length_pattern, cf->pool) != NGX_OK){
     	return NGX_ERROR;
     }
 
-    content_split_regex.pattern = content_split_pattern;
-    content_split_regex.pool = cf->pool;
-    if(ngx_http_upstream_filter_ngx_regex_compile(&content_split_regex) != NGX_OK){
+    if(ngx_http_upstream_filter_ngx_regex_compile(&content_split_regex, content_split_pattern, cf->pool) != NGX_OK){
     	return NGX_ERROR;
     }
 
@@ -270,9 +269,7 @@ ngx_conf_set_auth_filter_pass_pattern(ngx_conf_t *cf, ngx_command_t *cmd, void *
 		if(pattern_regex == NULL){
 			return NGX_CONF_ERROR;
 		}
-		pattern_regex->pattern = elts[i];
-		pattern_regex->pool = cf->pool;
-		if(ngx_http_upstream_filter_ngx_regex_compile(pattern_regex) != NGX_OK){
+		if(ngx_http_upstream_filter_ngx_regex_compile(pattern_regex, elts[i], cf->pool) != NGX_OK){
 			return "compile regex error";
 		}
 	}
@@ -329,9 +326,7 @@ ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 	if(usfc->url_pattern_regex == NULL){
 		return NGX_CONF_ERROR;
 	}
-	usfc->url_pattern_regex->pattern = usfc->url_pattern;
-	usfc->url_pattern_regex->pool = cf->pool;
-	if(ngx_http_upstream_filter_ngx_regex_compile(usfc->url_pattern_regex) != NGX_OK){
+	if(ngx_http_upstream_filter_ngx_regex_compile(usfc->url_pattern_regex, usfc->url_pattern, cf->pool) != NGX_OK){
 		return "comile regex error";
 	}
 
@@ -342,10 +337,8 @@ ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 		return NGX_CONF_ERROR;
 	}
 	ngx_str_t body_filter_pattern = ngx_string("\\{.*?\"code\":(-?\\d+).*?\\}");
-	usfc->body_filter_regex->pattern =  body_filter_pattern;
-	usfc->body_filter_regex->pool = cf->pool;
 	usfc->body_filter_regex_group_count = 2;
-	if(ngx_http_upstream_filter_ngx_regex_compile(usfc->body_filter_regex) != NGX_OK){
+	if(ngx_http_upstream_filter_ngx_regex_compile(usfc->body_filter_regex, body_filter_pattern, cf->pool) != NGX_OK){
 		return "comile regex error";
 	}
 
