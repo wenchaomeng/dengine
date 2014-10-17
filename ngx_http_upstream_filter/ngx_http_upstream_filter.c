@@ -303,6 +303,11 @@ ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 	usfc->server_url = args[4];
 	usfc->timeout = DEFAULT_AUTH_FILTER_TIMEOUT;
 
+	char *format = ngx_strstr((const char *)(usfc->server_url.data), "%s");
+	if(format == NULL){
+		return "url should hava %s";
+	}
+	*(format+1) = 'V';
 
 	//config processing
 	usfc->url_pattern_regex = ngx_palloc(cf->pool, sizeof(ngx_regex_compile_t));
@@ -707,7 +712,9 @@ void ngx_http_upstream_filter_send_request(ngx_http_upstream_filter_connection_d
 
 	if(buf == NULL){
 		u_char *real_url = ngx_palloc(r->pool, DEFAULT_MAX_URL_LENGTH);
-		ngx_snprintf(real_url, DEFAULT_MAX_URL_LENGTH, (const char*)url.uri.data, value.data);
+
+		ngx_snprintf(real_url, DEFAULT_MAX_URL_LENGTH, (const char*)url.uri.data, &value);
+
 		buf = ngx_create_temp_buf(r->pool, DEFAULT_MAX_REQUEST_DATA_LENGTH);
 		buf->last = ngx_slprintf(buf->last, buf->end,
 							"GET %s  HTTP/1.1\r\n"
