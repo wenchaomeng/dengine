@@ -90,7 +90,12 @@ void ngx_http_upstream_filter_upstream_init_mock(ngx_http_request_t *r);
 
 static void ngx_http_upstream_filter_merge_config(ngx_http_upstream_filter_srv_conf_t *parent,
 		ngx_http_upstream_filter_srv_conf_t *child, ngx_conf_t *cf);
-void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_str_t body);
+void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_str_t body, char *error_message);
 void ngx_http_upstream_filter_exception(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, char *message);
 void ngx_http_upstream_filter_send_request(ngx_http_upstream_filter_connection_data *data, ngx_connection_t *c);
 
+
+
+ngx_http_upstream_srv_conf_t *
+ngx_http_upstream_rbtree_lookup(ngx_http_upstream_main_conf_t *umcf,
+    ngx_str_t *host);

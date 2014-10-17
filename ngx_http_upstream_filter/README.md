@@ -11,26 +11,26 @@ Syntax: auth_filter_config type urlpattern keyname url
 Default:
 Context: http, upstream
 
-例如：auth_filter_config  oauth ".*" authorization "https://sso.51ping.com/oauth2.0/profile?access_token=%s";
+例如：auth_filter_config  oauth ".*" authorization "https://sso.51ping.com/oauth2.0/profile?access_token=%s"
 
-Syntax: auth_filter_config_off type;
+Syntax: auth_filter_config_off type
 Default: 
 Context: http, upstream
 
 
-Syntax: auth_filter_config_timeout type timeout;
+Syntax: auth_filter_config_timeout type timeout
 Default: 
 Context: http, upstream
 
 timeout: 毫秒
 
-Syntax: auth_filter_open on/off;
+Syntax: auth_filter_open on/off
 Default: 
 Context: http, upstream
 
 拦截模块是否关闭
 
-Syntax: auth_filter_exception_pass  on/off;
+Syntax: auth_filter_exception_pass  on/off
 Default: 
 Context: http, upstream
 

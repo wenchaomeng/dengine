@@ -4,7 +4,7 @@ extern ngx_http_client_body_handler_pt ngx_http_upstream_init_mock;
 static ngx_regex_compile_t  content_length_regex;
 static ngx_regex_compile_t  content_split_regex;
 static ngx_str_t content_length_pattern = ngx_string("(?i)Content-Length:.*?(\\d+)");
-static ngx_str_t content_split_pattern = ngx_string("\r\n\r\n(.*)");
+static ngx_str_t content_split_pattern = ngx_string("\r\n\r\n((?s).*)");
 
 ngx_http_client_body_handler_pt   ngx_http_upstream_init_next;
 
@@ -630,7 +630,7 @@ ngx_http_upstream_filter_read_handler(ngx_event_t *ev)
 		if(*result[regex_rc - 1].data == (u_char)'0' && result[regex_rc - 1].len == 1){
 			ngx_http_upstream_init_next(r);
 		}else{
-			ngx_http_upstream_filter_not_pass(r, c, usfscf, result[0]);
+			ngx_http_upstream_filter_not_pass(r, c, usfscf, result[0], "auth server return code not 0");
 		}
 	}
 
@@ -699,7 +699,10 @@ void ngx_http_upstream_filter_send_request(ngx_http_upstream_filter_connection_d
 		buf->last = ngx_slprintf(buf->last, buf->end,
 							"GET %s  HTTP/1.1\r\n"
 							"Host: %V\r\n"
-							"\r\n\r\n", real_url, &url.host);
+							"Accept: */*\r\n"
+							"\r\n\r\n", real_url
+							, &url.host
+							);
 		data->write_buf = buf;
 	}
 
@@ -741,14 +744,14 @@ exception:
 
 
 
-void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_str_t body){
+void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_str_t body, char *error_message){
 
 	ngx_str_t type = ngx_string("text/plain");
 	ngx_chain_t  chain;
 	ngx_buf_t	buf;
 	ngx_int_t	rc;
 
-	ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][authrization failed]%V", &r->uri);
+	ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][authrization failed]%s, %V", error_message, &r->uri);
 
 	if(c != NULL){
 		ngx_close_connection(c);
@@ -925,7 +928,7 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 
 	value = ngx_http_upstream_filter_find_key_value(usfc, r);
 	if(value.len == 0){
-		ngx_http_upstream_filter_not_pass(r, NULL, usfscf, value);
+		ngx_http_upstream_filter_not_pass(r, NULL, usfscf, value, "cat not find token in request");
 		return;
 	}
 
@@ -979,6 +982,77 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 	#endif
 }
 
+ngx_http_upstream_srv_conf_t    *ngx_http_upstream_filter_get_uscf(ngx_http_request_t *r, ngx_http_upstream_t *u){
+
+	ngx_http_upstream_srv_conf_t    *uscf = NULL;
+	ngx_str_t *host;
+	ngx_http_upstream_main_conf_t *umcf;
+	ngx_list_part_t *part;
+	ngx_http_upstream_srv_conf_t **uscfp;
+	ngx_uint_t i;
+
+    if (u->resolved == NULL) {
+
+        return u->conf->upstream;
+
+    } else {
+
+        if (u->resolved->sockaddr) {
+            return NULL;
+        }
+
+        host = &u->resolved->host;
+
+        umcf = ngx_http_get_module_main_conf(r, ngx_http_upstream_module);
+
+#if (NGX_HTTP_UPSTREAM_RBTREE)
+
+        uscf = ngx_http_upstream_rbtree_lookup(umcf, host);
+
+        if (uscf != NULL && ((uscf->port == 0 && u->resolved->no_port)
+            || uscf->port == u->resolved->port))
+        {
+            goto found;
+        }
+
+        part = &umcf->implicit_upstreams.part;
+        uscfp = part->elts;
+
+        for (i = 0; /* void */ ; i++) {
+
+            if (i >= part->nelts) {
+                if (part->next == NULL) {
+                    break;
+                }
+
+                part = part->next;
+                uscfp = part->elts;
+                i = 0;
+            }
+
+#else
+
+        uscfp = umcf->upstreams.elts;
+
+        for (i = 0; i < umcf->upstreams.nelts; i++) {
+
+#endif
+
+            uscf = uscfp[i];
+
+            if (uscf->host.len == host->len
+                && ((uscf->port == 0 && u->resolved->no_port)
+                     || uscf->port == u->resolved->port)
+                && ngx_memcmp(uscf->host.data, host->data, host->len) == 0)
+            {
+                goto found;
+            }
+        }
+    }
+
+found:
+	return uscf;
+}
 void ngx_http_upstream_filter_upstream_init_mock(ngx_http_request_t *r){
 
     ngx_http_upstream_srv_conf_t    *upstream;
@@ -990,11 +1064,18 @@ void ngx_http_upstream_filter_upstream_init_mock(ngx_http_request_t *r){
 
 	ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_upstream_init_mock]");
 
-	if(r->upstream == NULL || r->upstream->conf == NULL || r->upstream->conf->upstream == NULL){
+	if(r->upstream == NULL){
+		ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_upstream_init_mock][upstream null]");
 		goto next;
 	}
 
-	upstream = r->upstream->conf->upstream;
+	upstream = ngx_http_upstream_filter_get_uscf(r, r->upstream);
+
+	if(upstream == NULL){
+		ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_upstream_init_mock][upstream srv_cf null]");
+		goto next;
+	}
+
 	if(upstream->srv_conf == NULL){
 		ngx_log_error(NGX_LOG_INFO, r->pool->log, 0, "[ngx_http_upstream_filter_upstream_init_mock][srv_conf_null]");
 		goto next;
