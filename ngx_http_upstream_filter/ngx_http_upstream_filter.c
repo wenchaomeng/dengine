@@ -28,10 +28,10 @@ static ngx_command_t ngx_http_upstream_filter_commands[] = {
     },
 	{
 		ngx_string("auth_filter_pass_pattern"), // The command name
-	    NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
-	    ngx_conf_set_str_array_slot, // The command handler
+	    NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_1MORE,
+	    ngx_conf_set_auth_filter_pass_pattern, // The command handler
 	    NGX_HTTP_SRV_CONF_OFFSET,
-	    offsetof(ngx_http_upstream_filter_srv_conf_t, auth_filter_pass_pattern),
+	    0,
 	    NULL
 	 },
 	{
@@ -115,6 +115,7 @@ void * ngx_http_upstream_filter_create_srv_conf(ngx_conf_t *cf){
 	ufscf->auth_filter_exception_pass = NGX_CONF_UNSET;
 	ufscf->auth_filter_open = NGX_CONF_UNSET;
 	ufscf->auth_filter_pass_pattern = ngx_array_create(cf->pool, 4, sizeof(ngx_str_t));
+	ufscf->auth_filter_pass_pattern_regex = ngx_array_create(cf->pool, 4, sizeof(ngx_regex_compile_t));
 	ufscf->upstream_filter_config = ngx_array_create(cf->pool, 4, sizeof(ngx_http_upstream_filter_config));
 
 	if(cf->module_type == NGX_HTTP_MODULE){
@@ -124,10 +125,19 @@ void * ngx_http_upstream_filter_create_srv_conf(ngx_conf_t *cf){
 		ngx_conf_merge_value(ufscf->auth_filter_exception_pass, parent->auth_filter_exception_pass, DEFAULT_AUTH_FILTER_EXCEPTION_PASS);
 		ngx_conf_merge_value(ufscf->auth_filter_open, parent->auth_filter_open, DEFAULT_AUTH_FILTER_OPEN);
 
-		ngx_str_t *parent_pattern = parent->auth_filter_pass_pattern->elts;
+		if(parent->auth_filter_pass_pattern->nelts != parent->auth_filter_pass_pattern_regex->nelts){
+			ngx_log_error(NGX_LOG_NOTICE, cf->log, 0, "pass_pattern != pass_pattern_regex");
+			return NULL;
+		}
+		ngx_str_t *parent_pattern = (ngx_str_t *)parent->auth_filter_pass_pattern->elts;
+		ngx_regex_compile_t *parent_regex_pattern = (ngx_regex_compile_t *)parent->auth_filter_pass_pattern_regex->elts;
+
 		for(i=0; i < parent->auth_filter_pass_pattern->nelts; i++){
 			ngx_str_t *data = ngx_array_push(ufscf->auth_filter_pass_pattern);
 			*data = parent_pattern[i];
+
+			ngx_regex_compile_t *regex = ngx_array_push(ufscf->auth_filter_pass_pattern_regex);
+			*regex = parent_regex_pattern[i];
 		}
 
 		ngx_http_upstream_filter_merge_config(parent, ufscf, cf);
@@ -164,16 +174,13 @@ static void ngx_http_upstream_filter_merge_config(ngx_http_upstream_filter_srv_c
 ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
 
     ngx_http_upstream_main_conf_t  *umcf;
-	ngx_http_upstream_filter_srv_conf_t *parent, *child;
+	ngx_http_upstream_filter_srv_conf_t *child;
     ngx_http_upstream_srv_conf_t   **uscfp;
     ngx_uint_t i, j;
-    ngx_str_t *parent_pattern;
     ngx_http_upstream_filter_config  *usfc_child;
 
     //merge upstream conf
     umcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_upstream_module);
-    parent = ngx_http_conf_get_module_srv_conf(cf, ngx_http_upstream_filter_module);
-    parent_pattern = parent->auth_filter_pass_pattern->elts;
 
     uscfp = umcf->upstreams.elts;
     for( i=0 ; i < umcf->upstreams.nelts ; i++ ){
@@ -187,107 +194,13 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
 		ngx_log_error(NGX_LOG_NOTICE, cf->log, 0,
 	                   "upstream: %V, auth_filter_exception_pass:%i, auth_filter_open:%i, auth_filter_pass_pattern count:%ui, upstream_filter_config count:%ui",
 	                   &uscfp[i]->host, child->auth_filter_exception_pass, child->auth_filter_open
-	                   , child->auth_filter_pass_pattern->nelts
+	                   , child->auth_filter_pass_pattern->nelts, child->upstream_filter_config->nelts
 	                    );
 
 		usfc_child = child->upstream_filter_config->elts;
 		for(j=0;j<child->upstream_filter_config->nelts;j++){
 			ngx_log_error(NGX_LOG_NOTICE, cf->log, 0, "upstream: %V, type: %i, on:%i, pattern: %V, key:%V, server_url:%V, timeout:%i",
 					&uscfp[i]->host, usfc_child[j].type, usfc_child[j].on, &usfc_child[j].url_pattern, &usfc_child[j].key, &usfc_child[j].server_url, usfc_child[j].timeout);
-		}
-
-		//compile regex
-		//process url address
-		child->auth_filter_pass_pattern_regex = ngx_array_create(cf->pool, child->auth_filter_pass_pattern->nelts, sizeof(ngx_regex_compile_t));
-		if(child->auth_filter_pass_pattern_regex == NULL){
-			return NGX_ERROR;
-		}
-
-		ngx_regex_compile_t  *regex;
-		ngx_str_t	*child_pattern = child->auth_filter_pass_pattern->elts;
-		for(j=0; j<child->auth_filter_pass_pattern->nelts; j++){
-
-			regex = (ngx_regex_compile_t  *)ngx_array_push(child->auth_filter_pass_pattern_regex);
-			regex->pattern =  child_pattern[j];
-			regex->pool = cf->pool;
-
-			if(ngx_regex_compile(regex) != NGX_OK){
-				ngx_log_error(NGX_LOG_ERR, cf->log, 0, "comile regex error:%V", &child_pattern[j]);
-				return NGX_ERROR;
-			}
-
-		}
-
-		usfc_child = child->upstream_filter_config->elts;
-		for(j=0;j<child->upstream_filter_config->nelts;j++){
-
-			//url pattern
-			usfc_child[j].url_pattern_regex = ngx_palloc(cf->pool, sizeof(ngx_regex_compile_t));
-			if(usfc_child[j].url_pattern_regex == NULL){
-				return NGX_ERROR;
-			}
-			usfc_child[j].url_pattern_regex->pattern = usfc_child[j].url_pattern;
-			usfc_child[j].url_pattern_regex->pool = cf->pool;
-			if(ngx_regex_compile(usfc_child[j].url_pattern_regex) != NGX_OK){
-				ngx_log_error(NGX_LOG_ERR, cf->log, 0, "comile regex error:%V", &usfc_child[j].url_pattern);
-				return NGX_ERROR;
-			}
-
-
-			//body filter
-			usfc_child[j].body_filter_regex = ngx_palloc(cf->pool, sizeof(ngx_regex_compile_t));
-			if( usfc_child[j].body_filter_regex == NULL ){
-				return NGX_ERROR;
-			}
-			ngx_str_t body_filter_pattern = ngx_string("\\{.*?\"code\":(-?\\d+).*?\\}");
-			usfc_child[j].body_filter_regex->pattern =  body_filter_pattern;
-			usfc_child[j].body_filter_regex->pool = cf->pool;
-			usfc_child[j].body_filter_regex_group_count = 2;
-			if(ngx_regex_compile(usfc_child[j].body_filter_regex) != NGX_OK){
-				ngx_log_error(NGX_LOG_ERR, cf->log, 0, "comile regex error:%V", &usfc_child[j].body_filter_regex);
-				return NGX_ERROR;
-			}
-
-
-			ngx_int_t add, port;
-			//url parse
-			if(ngx_strncasecmp(usfc_child[j].server_url.data, (u_char*)"http://", 7) == 0){
-				add = 7;
-				port = 80;
-			}else if(ngx_strncasecmp(usfc_child[j].server_url.data, (u_char*)"https://", 8) == 0){
-				add = 8;
-				port = 443;
-			}else{
-				ngx_log_error(NGX_LOG_ERR, cf->log, 0, "url unrecognised:%V", &usfc_child[j].url);
-				return NGX_ERROR;
-			}
-
-			usfc_child[j].url.url.data = usfc_child[j].server_url.data + add;
-			usfc_child[j].url.url.len = usfc_child[j].server_url.len - add;
-			usfc_child[j].url.default_port = port;
-			usfc_child[j].url.uri_part = 1;
-			if(ngx_parse_url(cf->pool, &usfc_child[j].url) != NGX_OK){
-				if(usfc_child[j].url.err){
-					ngx_log_error(NGX_LOG_ERR, cf->log, 0, "%s, parse url:%V", usfc_child[j].url.err, &usfc_child[j].url);
-				}else{
-					ngx_log_error(NGX_LOG_ERR, cf->log, 0, "parse url error:%V", &usfc_child[j].url);
-				}
-				return NGX_ERROR;
-			}
-
-			//ssl
-			if(ngx_strncasecmp(usfc_child[j].server_url.data, (u_char*)"https", 5) == 0){
-
-				#if (NGX_HTTP_SSL)
-					if(ngx_http_upstream_filter_init_ssl(&usfc_child[j], cf) != NGX_OK){
-						ngx_log_error(NGX_LOG_ERR, cf->log, 0, "init https failed, parse url:%V", &usfc_child[j].url);
-						return NGX_ERROR;
-					}
-				#else
-					ngx_log_error(NGX_LOG_ERR, cf->log, 0, "https unsupported!, parse url:%V", &usfc_child[j].url);
-					return NGX_ERROR;
-				#endif
-			}
 		}
     }
 
@@ -299,7 +212,6 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf){
     content_split_regex.pattern = content_split_pattern;
     content_split_regex.pool = cf->pool;
     ngx_regex_compile(&content_split_regex);
-
 
 
     ngx_http_upstream_init_next = ngx_http_upstream_init_mock;
@@ -315,6 +227,39 @@ char * ngx_conf_get_http_upstream_filter_config_type(ngx_str_t type_desc, ngx_ht
 		*type = OAUTH;
 	}else{//unknown
 		return "unrecognised type, should in (sso, oauth)";
+	}
+
+	return NGX_CONF_OK;
+}
+
+
+char *
+ngx_conf_set_auth_filter_pass_pattern(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
+
+	ngx_http_upstream_filter_srv_conf_t *usfscf = conf;
+	ngx_uint_t i;
+	ngx_str_t  *pattern, *elts;
+	ngx_regex_compile_t  *pattern_regex;
+
+	elts = cf->args->elts;
+	for(i=1; i<cf->args->nelts ; i++){
+
+		pattern = (ngx_str_t*)ngx_array_push(usfscf->auth_filter_pass_pattern);
+		if(pattern == NULL){
+			return NGX_CONF_ERROR;
+		}
+		*pattern = elts[i];
+
+		pattern_regex = (ngx_regex_compile_t*)ngx_array_push(usfscf->auth_filter_pass_pattern_regex);
+		if(pattern_regex == NULL){
+			return NGX_CONF_ERROR;
+		}
+		pattern_regex->pattern = elts[i];
+		pattern_regex->pool = cf->pool;
+		if(ngx_regex_compile(pattern_regex) != NGX_OK){
+			ngx_log_error(NGX_LOG_ERR, cf->log, 0, "comile regex error:%V", &elts[i]);
+			return "compile regex error";
+		}
 	}
 
 	return NGX_CONF_OK;
@@ -357,6 +302,74 @@ ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
 	usfc->key = args[3];
 	usfc->server_url = args[4];
 	usfc->timeout = DEFAULT_AUTH_FILTER_TIMEOUT;
+
+
+	//config processing
+	usfc->url_pattern_regex = ngx_palloc(cf->pool, sizeof(ngx_regex_compile_t));
+	if(usfc->url_pattern_regex == NULL){
+		return NGX_CONF_ERROR;
+	}
+	usfc->url_pattern_regex->pattern = usfc->url_pattern;
+	usfc->url_pattern_regex->pool = cf->pool;
+	if(ngx_regex_compile(usfc->url_pattern_regex) != NGX_OK){
+		ngx_log_error(NGX_LOG_ERR, cf->log, 0, "comile regex error:%V", &usfc->url_pattern);
+		return NGX_CONF_ERROR;
+	}
+
+
+	//body filter
+	usfc->body_filter_regex = ngx_palloc(cf->pool, sizeof(ngx_regex_compile_t));
+	if( usfc->body_filter_regex == NULL ){
+		return NGX_CONF_ERROR;
+	}
+	ngx_str_t body_filter_pattern = ngx_string("\\{.*?\"code\":(-?\\d+).*?\\}");
+	usfc->body_filter_regex->pattern =  body_filter_pattern;
+	usfc->body_filter_regex->pool = cf->pool;
+	usfc->body_filter_regex_group_count = 2;
+	if(ngx_regex_compile(usfc->body_filter_regex) != NGX_OK){
+		ngx_log_error(NGX_LOG_ERR, cf->log, 0, "comile regex error:%V", &usfc->body_filter_regex);
+		return NGX_CONF_ERROR;
+	}
+
+	ngx_int_t add, port;
+	//url parse
+	if(ngx_strncasecmp(usfc->server_url.data, (u_char*)"http://", 7) == 0){
+		add = 7;
+		port = 80;
+	}else if(ngx_strncasecmp(usfc->server_url.data, (u_char*)"https://", 8) == 0){
+		add = 8;
+		port = 443;
+	}else{
+		ngx_log_error(NGX_LOG_ERR, cf->log, 0, "url unrecognised:%V", &usfc->url);
+		return NGX_CONF_ERROR;
+	}
+
+	usfc->url.url.data = usfc->server_url.data + add;
+	usfc->url.url.len = usfc->server_url.len - add;
+	usfc->url.default_port = port;
+	usfc->url.uri_part = 1;
+	if(ngx_parse_url(cf->pool, &usfc->url) != NGX_OK){
+		if(usfc->url.err){
+			ngx_log_error(NGX_LOG_ERR, cf->log, 0, "%s, parse url:%V", usfc->url.err, &usfc->url);
+		}else{
+			ngx_log_error(NGX_LOG_ERR, cf->log, 0, "parse url error:%V", &usfc->url);
+		}
+		return NGX_CONF_ERROR;
+	}
+
+	//ssl
+	if(ngx_strncasecmp(usfc->server_url.data, (u_char*)"https", 5) == 0){
+
+		#if (NGX_HTTP_SSL)
+			if(ngx_http_upstream_filter_init_ssl(usfc, cf) != NGX_OK){
+				ngx_log_error(NGX_LOG_ERR, cf->log, 0, "init https failed, parse url:%V", &usfc->url);
+				return NGX_CONF_ERROR;
+			}
+		#else
+			ngx_log_error(NGX_LOG_ERR, cf->log, 0, "https unsupported!, parse url:%V", &usfc->url);
+			return NGX_CONF_ERROR;
+		#endif
+	}
 
 	return NGX_CONF_OK;
 }

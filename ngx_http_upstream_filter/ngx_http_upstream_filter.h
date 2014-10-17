@@ -79,6 +79,7 @@ ngx_int_t   ngx_http_upstream_filter_postconfiguration(ngx_conf_t *cf);
 void * ngx_http_upstream_filter_create_main_conf(ngx_conf_t *cf);
 void * ngx_http_upstream_filter_create_srv_conf(ngx_conf_t *cf);
 char * ngx_conf_set_auth_filter_config(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+char *ngx_conf_set_auth_filter_pass_pattern(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 char * ngx_conf_set_auth_filter_config_off(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 char *ngx_conf_set_auth_filter_config_timeout(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 char *ngx_conf_set_flag_slot_override(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
