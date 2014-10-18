@@ -655,6 +655,7 @@ ngx_http_upstream_filter_read_handler(ngx_event_t *ev)
 		}
 
 		if(*result[regex_rc - 1].data == (u_char)'0' && result[regex_rc - 1].len == 1){
+			ngx_http_upstream_filter_cleanup(c);
 			ngx_http_upstream_init_next(r);
 		}else{
 			ngx_http_upstream_filter_not_pass(r, c, usfscf, result[0], "auth server return code not 0");
