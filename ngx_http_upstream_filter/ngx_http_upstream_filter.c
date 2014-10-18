@@ -1,10 +1,13 @@
 #include "ngx_http_upstream_filter.h"
 
+static void ngx_http_upstream_filter_cleanup(void *cln_data);
+
 extern ngx_http_client_body_handler_pt ngx_http_upstream_init_mock;
 static ngx_regex_compile_t  content_length_regex;
 static ngx_regex_compile_t  content_split_regex;
 static ngx_str_t content_length_pattern = ngx_string("(?i)Content-Length:.*?(\\d+)");
 static ngx_str_t content_split_pattern = ngx_string("\r\n\r\n((?s).*)");
+
 
 ngx_http_client_body_handler_pt   ngx_http_upstream_init_next;
 
@@ -779,9 +782,7 @@ void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *
 
 	ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][authrization failed]%s, %V", error_message, &r->uri);
 
-	if(c != NULL){
-		ngx_close_connection(c);
-	}
+	ngx_http_upstream_filter_cleanup(c);
 
 	r->headers_out.status = NGX_HTTP_UNAUTHORIZED;
 	r->headers_out.content_type = type;
@@ -816,9 +817,7 @@ void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *
 //异常情况下，处理
 void ngx_http_upstream_filter_exception(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, char *message){
 
-	if(c != NULL){
-		ngx_close_connection(c);
-	}
+	ngx_http_upstream_filter_cleanup(c);
 
 	if(usfscf->auth_filter_exception_pass){
 		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][pass][exception default pass]%s", message);
@@ -943,6 +942,19 @@ ngx_str_t ngx_http_upstream_filter_find_key_value(ngx_http_upstream_filter_confi
 	return value;
 }
 
+static void
+ngx_http_upstream_filter_cleanup(void *data)
+{
+	ngx_connection_t *c = data;
+
+	if(c == NULL){
+		return ;
+	}
+
+	ngx_log_error(NGX_LOG_INFO, c->log, 0, "[ngx_http_upstream_filter_cleanup]");
+	ngx_close_connection(c);
+}
+
 void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_http_upstream_filter_config *usfc, ngx_http_request_t *r){
 
 	ngx_peer_connection_t *pc;
@@ -959,6 +971,11 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 	}
 
 	pc = ngx_palloc(r->pool, sizeof(ngx_peer_connection_t));
+	if(pc == NULL){
+		ngx_http_upstream_filter_exception(r, NULL, usfscf, "alloc peer_connector fail");
+		return ;
+	}
+
 	ngx_memset(pc, 0, sizeof(ngx_peer_connection_t));
 	pc->sockaddr = usfc->url.addrs->sockaddr;
 	pc->socklen = usfc->url.addrs->socklen;
@@ -997,6 +1014,15 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 
 	c->data = data;
 	c->pool = r->pool;
+
+	ngx_http_cleanup_t *cln = ngx_http_cleanup_add(r, 0);
+	if(cln == NULL){
+		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter]cln null");
+		ngx_http_upstream_filter_exception(r, pc->connection, usfscf, "cln null");
+		return;
+	}
+	cln->data = c;
+	cln->handler = ngx_http_upstream_filter_cleanup;
 
     if(rc == NGX_AGAIN){
     	ngx_add_timer(c->write, usfc->timeout);
