@@ -777,11 +777,21 @@ void ngx_http_upstream_filter_add_fail_header(ngx_http_request_t *r, char *error
 	ngx_str_t key = ngx_string(UPSTREAM_FILTER_UNPASS_HEADER_KEY);
 	ngx_str_t value = {ngx_strlen(error_message), (u_char*)error_message};
 	ngx_table_elt_t *h = ngx_list_push(&r->headers_out.headers);
+	if(h == NULL){
+		return;
+	}
 
+	ngx_memset(h, 0, sizeof(ngx_table_elt_t));
 	h->key = key;
 	h->value = value;
-	h->lowcase_key = key.data;
+
 	h->hash = ngx_hash_key_lc(key.data, key.len);
+
+	h->lowcase_key = ngx_palloc(r->pool, key.len);
+	if(h->lowcase_key == NULL){
+		return;
+	}
+	ngx_strlow(h->lowcase_key, key.data, key.len);
 }
 
 
