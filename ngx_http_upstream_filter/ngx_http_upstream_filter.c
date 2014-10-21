@@ -772,6 +772,17 @@ exception:
 	ngx_http_upstream_filter_exception(r, c, usfscf, error_message);
 }
 
+void ngx_http_upstream_filter_add_fail_header(ngx_http_request_t *r, char *error_message){
+
+	ngx_str_t key = ngx_string(UPSTREAM_FILTER_UNPASS_HEADER_KEY);
+	ngx_str_t value = {ngx_strlen(error_message), (u_char*)error_message};
+	ngx_table_elt_t *h = ngx_list_push(&r->headers_out.headers);
+
+	h->key = key;
+	h->value = value;
+	h->lowcase_key = key.data;
+	h->hash = ngx_hash_key_lc(key.data, key.len);
+}
 
 
 void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_str_t body, char *error_message){
@@ -781,7 +792,9 @@ void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *
 	ngx_buf_t	buf;
 	ngx_int_t	rc;
 
-	ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][authrization failed]%s, %V", error_message, &r->uri);
+	ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][authrization failed]%s", error_message);
+
+
 
 	ngx_http_upstream_filter_cleanup(c);
 
@@ -789,6 +802,7 @@ void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *
 	r->headers_out.content_type = type;
 	r->headers_out.content_length_n = body.len;
 
+	ngx_http_upstream_filter_add_fail_header(r, error_message);
 
 	memset(&buf, 0, sizeof(ngx_buf_t));
 
@@ -816,15 +830,16 @@ void ngx_http_upstream_filter_not_pass(ngx_http_request_t *r, ngx_connection_t *
 }
 
 //异常情况下，处理
-void ngx_http_upstream_filter_exception(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, char *message){
+void ngx_http_upstream_filter_exception(ngx_http_request_t *r, ngx_connection_t *c, ngx_http_upstream_filter_srv_conf_t *usfscf, char *error_message){
 
 	ngx_http_upstream_filter_cleanup(c);
 
 	if(usfscf->auth_filter_exception_pass){
-		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][pass][exception default pass]%s", message);
+		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][pass][exception default pass]%s", error_message);
 		ngx_http_upstream_init_next(r);
 	}else{
-		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][exception default unpass]%s", message);
+		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter][unpass][exception default unpass]%s", error_message);
+		ngx_http_upstream_filter_add_fail_header(r, error_message);
 		ngx_http_finalize_request(r, NGX_HTTP_UNAUTHORIZED);
 	}
 }
