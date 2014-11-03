@@ -51,7 +51,7 @@ void	*ngx_http_dypp_create_srv_conf(ngx_conf_t *cf){
 
 
 	ngx_conf_merge_uint_value(dscf->degrade_rate, parent_value, UPSTREA_DEGRATE_DEFAULT_RATE);
-	ngx_log_error(NGX_LOG_NOTICE, ngx_cycle->log, 0, " after create and merge, dypp_rate_rate: %ui", dscf->degrade_rate);
+	ngx_log_error(NGX_LOG_NOTICE, ngx_cycle->log, 0, " after create and merge, dypp_degrade_rate: %ui", dscf->degrade_rate);
 
     return dscf;
 }
