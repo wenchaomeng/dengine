@@ -96,13 +96,20 @@ static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 		offsetof(ngx_http_dypp_loc_conf_t, dypp_key),
 		NULL
 	},
-
 	{
 		ngx_string("upstream_degrade_rate"), // The command name
 		NGX_HTTP_MAIN_CONF | NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
 		ngx_http_dypp_set_degrade_rate, // The command handler
 		NGX_HTTP_SRV_CONF_OFFSET,
 		offsetof(ngx_http_dypp_srv_conf_t, degrade_rate),
+		NULL
+	},
+	{
+		ngx_string("upstream_degrade_force_state"), // The command name
+		NGX_HTTP_UPS_CONF | NGX_CONF_TAKE1,
+		ngx_http_dypp_set_degrade_force_state, // The command handler
+		NGX_HTTP_SRV_CONF_OFFSET,
+		offsetof(ngx_http_dypp_srv_conf_t, degrade_force_state),
 		NULL
 	},
 

@@ -42,6 +42,7 @@ void	*ngx_http_dypp_create_srv_conf(ngx_conf_t *cf){
 	}
 
 	dscf->degrade_rate = NGX_CONF_UNSET_UINT;
+	dscf->degrade_force_state = UPSTREAM_DEGRADE_FORCE_AUTO;
 
 	if(cf->module_type == NGX_HTTP_MODULE){
 
@@ -76,6 +77,29 @@ char * ngx_http_dypp_set_degrade_rate(ngx_conf_t *cf, ngx_command_t *cmd, void *
 
     return NGX_CONF_OK;
 }
+
+char *
+ngx_http_dypp_set_degrade_force_state(ngx_conf_t *cf, ngx_command_t *cmd, void *conf){
+
+    ngx_http_dypp_srv_conf_t  *dscf = conf;
+    ngx_str_t *value = cf->args->elts;
+
+    if(cf->args->nelts != 2){
+    	return "upstream_degrade_force_state should have one and only one parameter";
+    }
+
+    if(value[1].data[0] == '-'){
+    	dscf->degrade_force_state  = UPSTREAM_DEGRADE_FORCE_DOWN;
+    }else if(value[1].data[0] == '0'){
+    	dscf->degrade_force_state  = UPSTREAM_DEGRADE_FORCE_AUTO;
+    }else{
+    	dscf->degrade_force_state  = UPSTREAM_DEGRADE_FORCE_UP;
+    }
+
+    return NGX_CONF_OK;
+}
+
+
 
 char *
 ngx_http_dypp_init_main_conf(ngx_conf_t *cf, void *conf)
@@ -279,6 +303,7 @@ void ngx_http_upstream_degrade_copy_value(ngx_http_upstream_degrade_shm_t *dst, 
 	dst->degrate_up_count = src->degrate_up_count;
 	dst->server_count = src->server_count;
 	dst->upstream_checked = src->upstream_checked;
+	dst->force_state = src->force_state;
 
 	ngx_log_error(NGX_LOG_INFO, ngx_cycle->log, 0, "upstream:%V, total: %ui, upcount: %ui, rate: %ui, degrade_rate:%ui",
 			&src->upstream_name, src->server_count, src->degrate_up_count, rate, src->degrade_rate);
@@ -353,8 +378,6 @@ ngx_int_t ngx_http_upstream_degrade_set_shm_node(ngx_http_upstream_degrade_shm_t
 
 	degrade[i].str = degrade[i].upstream_name;
 
-	degrade[i].force_state = UPSTREAM_DEGRADE_FORCE_AUTO;
-
 	degrade[i].node.key = ngx_crc32_long(src->upstream_name.data, src->upstream_name.len);
 
 	ngx_rbtree_insert(&udshm->tree, (ngx_rbtree_node_t *)&degrade[i]);
@@ -415,6 +438,13 @@ ngx_int_t ngx_http_upstream_degrade_add_shm_tree(ngx_rbtree_t tree, ngx_pool_t *
 	return NGX_OK;
 }
 
+static void ngx_http_upstream_copy_conf(ngx_http_dypp_srv_conf_t *dscf, ngx_http_upstream_degrade_shm_t *degrade_node){
+
+	degrade_node->degrade_rate = dscf->degrade_rate;
+	degrade_node->force_state = dscf->degrade_force_state;
+}
+
+
 
 void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 
@@ -468,12 +498,13 @@ void ngx_http_upstream_degrade_timer(ngx_event_t *event){
 			degrade_node->upstream_name = *upstream_name;
 			degrade_node->node.key = hash;
 			degrade_node->upstream_checked = 1;
+
+			dscf = ngx_http_conf_upstream_srv_conf(peer[i].uscf, ngx_dynamic_proxy_pass_module);
+			ngx_http_upstream_copy_conf(dscf, degrade_node);
+
 			ngx_rbtree_insert(&tree, (ngx_rbtree_node_t *)degrade_node);
 		}
 
-		dscf = ngx_http_conf_upstream_srv_conf(peer[i].uscf, ngx_dynamic_proxy_pass_module);
-
-		degrade_node->degrade_rate = dscf->degrade_rate;
 		degrade_node->server_count++;
 		if(!peer[i].shm->down){
 			degrade_node->degrate_up_count++;
@@ -499,12 +530,14 @@ fail:
 	ngx_event_add_timer(event, dmcf_global->degrade_interval);
 }
 
+
 static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t *tree, ngx_pool_t *pool, ngx_log_t *log){
 
     ngx_http_upstream_main_conf_t  *umcf;
     ngx_http_upstream_srv_conf_t	**uscfp;
 	ngx_str_t  *upstream_name;
 	ngx_http_upstream_degrade_shm_t *degrade_node;
+	ngx_http_dypp_srv_conf_t *dscf;
 
     ngx_uint_t 	i, hash;
 
@@ -541,10 +574,14 @@ static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t *tre
 		degrade_node->upstream_name = *upstream_name;
 		degrade_node->node.key = hash;
 		degrade_node->upstream_checked = 0;
-		//unchecked
 
 		degrade_node->server_count = uscfp[i]->servers->nelts;
 		degrade_node->degrate_up_count = uscfp[i]->servers->nelts;
+
+		//unchecked
+		dscf = ngx_http_conf_upstream_srv_conf(uscfp[i], ngx_dynamic_proxy_pass_module);
+		ngx_http_upstream_copy_conf(dscf, degrade_node);
+
 		ngx_rbtree_insert(tree, (ngx_rbtree_node_t *)degrade_node);
     }
 

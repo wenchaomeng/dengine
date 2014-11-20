@@ -23,6 +23,7 @@ void * ngx_http_dypp_create_main_conf(ngx_conf_t *cf);
 char * ngx_http_dypp_init_main_conf(ngx_conf_t *cf, void *conf);
 void * ngx_http_dypp_create_srv_conf(ngx_conf_t *cf);
 char * ngx_http_dypp_set_degrade_rate(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+char *ngx_http_dypp_set_degrade_force_state(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 char * ngx_http_upstream_degrade_interface(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 char * ngx_http_dypp_degrade_shm_size(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
@@ -98,6 +99,7 @@ typedef struct {
 typedef struct {
 
 	ngx_uint_t  degrade_rate;
+	ngx_uint_t  degrade_force_state;
 
 } ngx_http_dypp_srv_conf_t;
 
