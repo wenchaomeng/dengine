@@ -30,12 +30,6 @@ A nginx module which supports dynamic proxy_pass
 		GET http://localhost:port/degrade/status
 		或者
 		GET http://localhost:port/degrade/status/detail
-	2、设置降级状态
-		POST http://localhost:port/degrade/force/down?upstreams=${upstreamName},...
-		POST http://localhost:port/degrade/force/up?upstreams=${upstreamName},...
-		POST http://localhost:port/degrade/force/auto?upstreams=${upstreamName},...
-
-
 
 
 
