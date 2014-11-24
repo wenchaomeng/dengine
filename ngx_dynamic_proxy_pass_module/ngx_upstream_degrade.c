@@ -546,7 +546,7 @@ static ngx_int_t ngx_http_upstream_degrade_add_unchecked_pools(ngx_rbtree_t *tre
 
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
-    	if(uscfp[i]->servers == NULL){
+    	if(uscfp[i]->srv_conf == NULL){
     		/**
     		 * like proxy_pass http://www.baidu.com
     		 */
