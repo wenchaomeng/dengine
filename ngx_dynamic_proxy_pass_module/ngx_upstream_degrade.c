@@ -759,10 +759,7 @@ static void ngx_http_upstream_degrade_create_return_str(ngx_buf_t *buf, u_char d
 char *
 ngx_http_upstream_degrade_interface(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_str_t                           *value;
     ngx_http_core_loc_conf_t            *clcf;
-
-    value = cf->args->elts;
 
     clcf = ngx_http_conf_get_module_loc_conf(cf, ngx_http_core_module);
 

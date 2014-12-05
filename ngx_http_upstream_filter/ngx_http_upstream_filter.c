@@ -677,7 +677,6 @@ ngx_http_upstream_filter_write_handler(ngx_event_t *ev)
 	ngx_http_upstream_filter_config *usfc = data->usfc;
 	ngx_http_upstream_filter_srv_conf_t *usfscf = data->usfscf;
 	ngx_http_request_t *r = data->r;
-	ngx_url_t url = usfc->url;
 	char *error_message;
 
 	ngx_log_error(NGX_LOG_INFO, ev->log, 0, "[ngx_http_upstream_filter_write_handler]");
@@ -691,7 +690,6 @@ ngx_http_upstream_filter_write_handler(ngx_event_t *ev)
         ngx_del_timer(ev);
     }
 
-	url = usfc->url;
 
 #if (NGX_HTTP_SSL)
 	if(usfc->ssl && c->ssl == NULL){
