@@ -1039,15 +1039,6 @@ void ngx_http_upstream_filter(ngx_http_upstream_filter_srv_conf_t *usfscf, ngx_h
 	c->data = data;
 	c->pool = r->pool;
 
-	ngx_http_cleanup_t *cln = ngx_http_cleanup_add(r, 0);
-	if(cln == NULL){
-		ngx_log_error(NGX_LOG_ERR, r->pool->log, 0, "[ngx_http_upstream_filter]cln null");
-		ngx_http_upstream_filter_exception(r, pc->connection, usfscf, "cln null");
-		return;
-	}
-	cln->data = c;
-	cln->handler = ngx_http_upstream_filter_cleanup;
-
     if(rc == NGX_AGAIN){
     	ngx_add_timer(c->write, usfc->timeout);
     	return;
