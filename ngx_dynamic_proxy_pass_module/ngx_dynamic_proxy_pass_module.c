@@ -74,7 +74,7 @@ static u_char* has_generate_uid(ngx_http_request_t* r);
 static ngx_command_t ngx_dynamic_proxy_pass_module_commands[] = {
 	{
 		ngx_string("dp_domain"), // The command name
-		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+		NGX_HTTP_MAIN_CONF | NGX_HTTP_SRV_CONF | NGX_HTTP_LIF_CONF | NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
 		ngx_conf_set_str_slot, // The command handler
 		NGX_HTTP_LOC_CONF_OFFSET,
 		offsetof(ngx_http_dypp_loc_conf_t, dp_domain),
