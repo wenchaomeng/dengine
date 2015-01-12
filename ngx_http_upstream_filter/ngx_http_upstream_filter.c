@@ -975,6 +975,17 @@ ngx_http_upstream_filter_cleanup(void *data)
 		return ;
 	}
 
+	#if (NGX_HTTP_SSL)
+
+        if (c->ssl) {
+
+            c->ssl->no_wait_shutdown = 1;
+
+            (void) ngx_ssl_shutdown(c);
+        }
+	#endif
+
+
 	ngx_log_error(NGX_LOG_INFO, c->log, 0, "[ngx_http_upstream_filter_cleanup]");
 	ngx_close_connection(c);
 }
