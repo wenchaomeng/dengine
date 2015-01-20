@@ -15,6 +15,7 @@ typedef struct {
 
 typedef struct {
 
+
 	size_t  buff_size;
 
 }ngx_http_flush_filter_ctx_t;

@@ -65,7 +65,7 @@ char *ngx_http_flush_filter_merge_loc_conf(ngx_conf_t *cf, void *prev, void *con
 }
 
 static ngx_int_t
-ngx_http_gzip_header_filter(ngx_http_request_t *r)
+ngx_http_flush_header_filter(ngx_http_request_t *r)
 {
 
 	ngx_http_flush_filter_ctx_t *ctx = ngx_pcalloc(r->pool, sizeof(ngx_http_flush_filter_ctx_t));
@@ -80,11 +80,9 @@ ngx_http_gzip_header_filter(ngx_http_request_t *r)
     return ngx_http_next_header_filter(r);
 }
 
-
 static ngx_int_t
 ngx_http_flush_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
-	size_t  i;
 	ngx_buf_t *buf;
 	ngx_chain_t *chain_in = in;
 	ngx_http_flush_filter_loc_conf_t *fflc;
@@ -102,8 +100,13 @@ ngx_http_flush_body_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
 		buf = chain_in->buf;
 		ffctx->buff_size += buf->last - buf->pos;
+		ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "buff_size: %d", ffctx->buff_size);
 
 		if( ffctx->buff_size >= fflc->flush_buff_size){
+
+			ngx_log_error(NGX_LOG_INFO, r->connection->log, 0, "set flush, %d", ffctx->buff_size);
+
+			ffctx->buff_size = 0;
 			ffctx->buff_size = 0;
 			//set flush
 			buf->flush = 1;
@@ -121,7 +124,7 @@ ngx_int_t   ngx_http_flush_filter_postconfiguration(ngx_conf_t *cf){
 
 
 	ngx_http_next_header_filter = ngx_http_top_header_filter;
-	ngx_http_top_header_filter = ngx_http_gzip_header_filter;
+	ngx_http_top_header_filter = ngx_http_flush_header_filter;
 
 	ngx_http_next_body_filter = ngx_http_top_body_filter;
 	ngx_http_top_body_filter = ngx_http_flush_body_filter;
